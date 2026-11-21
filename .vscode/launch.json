@@ -8,6 +8,7 @@
       "module": "uvicorn",
       "args": ["app.main:app", "--host", "127.0.0.1", "--port", "8081"],
       "cwd": "${workspaceFolder}",
+      "envFile": "${workspaceFolder}/.env",
       "justMyCode": true
     }
   ]

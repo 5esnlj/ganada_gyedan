@@ -1,4 +1,5 @@
 import asyncio
+from contextlib import asynccontextmanager
 
 from fastapi import APIRouter, FastAPI
 from fastapi.exceptions import RequestValidationError
@@ -11,6 +12,7 @@ from app.core.errors import APIError, ERROR_RESPONSES, api_error, http_error, va
 from app.core.openapi import add_request_headers
 from app.core.state import MemoryStore
 from app.dashboard.router import router as dashboard_router
+from app.database import check_connection
 from app.diagnostic.assessment import load_assessment_forms
 from app.diagnostic.fixtures import demo_provider, seed_diagnostics
 from app.diagnostic.forms import FormProvider, StaticFormProvider
@@ -25,6 +27,7 @@ class Health(BaseModel):
     status: str = "ok"
     mode: str = "memory"
     databaseConnected: bool = False
+    databaseReachableAtStartup: bool = False
     solarConnected: bool = False
     isSynthetic: bool
 
@@ -38,7 +41,13 @@ def create_app(
     demo = store is None
     state = MemoryStore() if demo else store
 
+    @asynccontextmanager
+    async def lifespan(application: FastAPI):
+        application.state.database_connected = await asyncio.to_thread(check_connection)
+        yield
+
     application = FastAPI(
+        lifespan=lifespan,
         title="가나다계단 API",
         version="0.1.0",
         description="가나다계단 로컬 개발 API. 기본 실행에는 가상 계정과 자료가 포함됩니다.",
@@ -83,7 +92,7 @@ def create_app(
 
     @api.get("/health", response_model=Health, tags=["공통"])
     def health():
-        return Health(isSynthetic=demo)
+        return Health(isSynthetic=demo, databaseReachableAtStartup=getattr(application.state, "database_connected", False))
 
     for router in (identity_router, classes_router, diagnostic_router, materials_router, quizzes_router, dashboard_router):
         api.include_router(router)

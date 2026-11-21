@@ -74,3 +74,16 @@ git pull --ff-only origin feat/korean-assessment
 현재 PDF 업로드는 텍스트가 포함된 PDF를 10 MiB, 100페이지, 추출 텍스트 25만 자까지 받습니다. 스캔 PDF의 OCR, 파일 악성코드 검사 및 운영용 비공개 파일 저장소는 후속 작업입니다. 아직은 실제 학생 데이터나 운영 계정으로 실행하지 마세요.
 
 전체 기능의 DML 대응, 팀원 기능 연결 지점, 다음 구현 순서는 [백엔드 개발 계획](docs/backend-plan.md)에서 확인할 수 있습니다.
+
+## Windows에서 MariaDB 준비
+
+[예시 SQL과 ZIP](docs/mariadb-seed/)에서 기존 `ganada`를 선택한 상태로 `02_seed_data.sql`과 `03_verify_data.sql`을 실행합니다. 이미 테이블 20개가 있는 경우 생성 SQL은 건너뜁니다.
+
+```powershell
+.\.venv\Scripts\python.exe -m pip install -r requirements-mariadb.txt
+Copy-Item .env.example .env
+```
+
+`.env`에서 로컬 DB 계정과 비밀번호를 입력합니다. 예시 주소는 현재 Windows 설정인 `127.0.0.1:3306`, 스키마는 `ganada`입니다. 앱에는 가급적 `ganada`에 필요한 권한만 부여한 계정을 사용합니다. 사진의 `root`는 HeidiSQL의 관리용 계정입니다. `.env`는 Git에서 제외됩니다.
+
+F5로 백엔드를 시작하고 `/api/v1/health`에서 `databaseReachableAtStartup: true`를 확인합니다. 이는 시작 시 MariaDB 인증과 20개 테이블 확인이 성공했다는 뜻입니다. 로그인·진단·자료 데이터는 아직 메모리에서 처리하며, `databaseConnected`는 이 데이터 저장 전환이 적용될 때까지 `false`입니다.

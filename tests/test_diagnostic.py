@@ -1,9 +1,11 @@
 from dataclasses import replace
+from pathlib import Path
 
 from fastapi.testclient import TestClient
 from pydantic import ValidationError
 import pytest
 
+from app.diagnostic.assessment import load_assessment_forms
 from app.diagnostic.fixtures import demo_provider
 from app.diagnostic.forms import DiagnosticForm, StaticFormProvider
 from app.main import create_app
@@ -108,13 +110,15 @@ def test_diagnostic_start_pins_form_and_requires_active_membership():
 
 def test_start_without_published_form_does_not_create_attempt():
     app = create_app(diagnostic_form_provider=StaticFormProvider(None))
+    app.state.diagnostic_assessment_forms = {}
     with login(app, "s_a") as student:
         unavailable = student.post("/diagnostic/start", json={"classId": "cls_1"})
         assert unavailable.status_code == 503
         assert unavailable.json()["code"] == "DIAGNOSTIC_FORM_UNAVAILABLE"
+        assert student.post("/diagnostic/start", json={"classId": "cls_1", "gradeBand": "g34"}).status_code == 503
         assert student.get("/diagnostic").json() == {
             "status": "not_started", "formId": None, "totalQuestions": 0,
-            "completedQuestions": 0, "nextQuestionId": None,
+            "completedQuestions": 0, "nextQuestionId": None, "availableGradeBands": [],
         }
 
 
@@ -148,7 +152,9 @@ def test_attached_assessment_uses_pinned_form_and_source_scoring(band, other, fi
     app = create_app()
     form = app.state.diagnostic_assessment_forms[band]
     with login(app, "s_pending") as student:
-        assert student.get("/diagnostic").json()["formId"] == "form_mock_v1"
+        initial = student.get("/diagnostic").json()
+        assert initial["formId"] == "form_mock_v1"
+        assert initial["availableGradeBands"] == ["g34", "g56"]
         started = student.post("/diagnostic/start", json={"classId": "cls_1", "gradeBand": band})
         assert started.status_code == 200, started.text
         assert started.json() == {
@@ -158,6 +164,7 @@ def test_attached_assessment_uses_pinned_form_and_source_scoring(band, other, fi
         }
         repeated = student.post("/diagnostic/start", json={"classId": "cls_1", "gradeBand": other})
         assert repeated.json()["gradeBand"] == band
+        assert student.get("/diagnostic").json()["availableGradeBands"] == []
         first = student.get("/diagnostic/next-question").json()["question"]
         assert first["skill"] == "listening" and first["sectionNumber"] == 1
         assert first["sectionTotal"] == 15 and first["maxPoints"] == 4
@@ -193,6 +200,7 @@ def test_attached_assessment_uses_pinned_form_and_source_scoring(band, other, fi
             assert response.status_code == 200, response.text
         assert response.json()["progress"]["status"] == "completed"
         assert response.json()["progress"]["completedQuestions"] == 35
+        assert resumed.get("/diagnostic").json()["availableGradeBands"] == []
 
         results = resumed.get("/diagnostic/results").json()
         assert results["isSynthetic"] is False
@@ -216,7 +224,6 @@ def test_attached_assessment_uses_pinned_form_and_source_scoring(band, other, fi
 
 
 def test_attached_assessment_respects_raw_point_criterion_and_failed_thresholds():
-    from app.diagnostic.assessment import load_assessment_forms
     from app.diagnostic.grading import grade
 
     form = load_assessment_forms()["g34"]
@@ -246,8 +253,28 @@ def test_started_legacy_attempt_cannot_be_replaced_by_grade_selection():
     app = create_app()
     with login(app, "s_pending") as student:
         assert answer(student, "dq_001", "1").status_code == 200
+        assert student.get("/diagnostic").json()["availableGradeBands"] == []
         response = student.post("/diagnostic/start", json={"classId": "cls_1", "gradeBand": "g34"})
         assert response.status_code == 200
         assert response.json()["formId"] == "form_mock_v1"
         assert response.json()["completedQuestions"] == 1
         assert "gradeBand" not in response.json()
+
+
+def test_assessment_media_are_bundled_in_the_matching_grade_area_and_skill():
+    public = Path(__file__).resolve().parents[1] / "frontend" / "public"
+    assets = set()
+    for band, form in load_assessment_forms().items():
+        for item in form.questions:
+            question = item.display
+            prefix = f"/diagnostic-assets/{band}/{question.area}/{question.skill}/"
+            assert bool(question.audioUrl) == (question.skill == "listening")
+            urls = [question.audioUrl, question.imageUrl, *(option.imageUrl for option in question.options)]
+            for url in filter(None, urls):
+                assert url.startswith(prefix), url
+                file = public / url.lstrip("/")
+                assert file.is_file(), file
+                assets.add(file)
+
+    assert len([asset for asset in assets if asset.suffix == ".mp3"]) == 30
+    assert len([asset for asset in assets if asset.suffix == ".png"]) == 23

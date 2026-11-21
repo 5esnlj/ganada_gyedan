@@ -11,6 +11,7 @@ export type DiagnosticStatus = {
   completedQuestions: number;
   nextQuestionId: string | null;
   gradeBand?: GradeBand;
+  availableGradeBands?: GradeBand[];
 };
 export type DiagnosticSpan = { text: string; style: 'plain' | 'strong' | 'underline' };
 export type DiagnosticQuestion = {

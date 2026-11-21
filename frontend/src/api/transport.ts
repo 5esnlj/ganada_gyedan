@@ -11,7 +11,7 @@ export function createTransport(baseUrl: string, send: typeof fetch = fetch) {
     if (!['GET', 'HEAD', 'OPTIONS'].includes((init.method ?? 'GET').toUpperCase()) && csrfToken && !headers.has('X-CSRF-Token')) headers.set('X-CSRF-Token', csrfToken);
     let res: Response;
     try { res = await send(`${baseUrl.replace(/\/$/, '')}${path}`, { ...init, headers, credentials: 'include' }); }
-    catch { throw new ApiError(0, 'NETWORK_ERROR', 'API 서버에 연결할 수 없습니다. mock 서버 실행 상태를 확인해 주세요.'); }
+    catch { throw new ApiError(0, 'NETWORK_ERROR', 'API 서버에 연결할 수 없습니다. 백엔드가 실행 중인지 확인해 주세요.'); }
     if (!res.ok) {
       const data = await res.json().catch(() => ({})) as { code?: string; message?: string; requestId?: string };
       throw new ApiError(res.status, data.code ?? 'HTTP_ERROR', data.message ?? `요청에 실패했습니다 (${res.status}).`, data.requestId);

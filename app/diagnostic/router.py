@@ -19,6 +19,7 @@ from .dto import (
 from .forms import FormProvider
 from .service import (
     active_diagnostic,
+    can_select_grade_band,
     class_students,
     completed_results,
     diagnostic_state,
@@ -43,7 +44,11 @@ Forms = Annotated[FormProvider, Depends(get_form_provider)]
 def diagnostic(request: Request, state: Store, forms: Forms) -> DiagnosticStatus:
     user = auth(request, "student")
     record = state.diagnostics.get(user["id"])
-    return progress(record, forms.active_form() if record is None else None)
+    status = progress(record, forms.active_form() if record is None else None)
+    status.availableGradeBands = (
+        list(request.app.state.diagnostic_assessment_forms) if can_select_grade_band(record) else []
+    )
+    return status
 
 
 @router.post(

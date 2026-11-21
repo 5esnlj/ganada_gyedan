@@ -66,12 +66,20 @@ function Authenticated({ session, onLogout, sessionError, refreshSession }: {
   const { data, error, retry } = useApi(api.getClasses, [session.user.id]);
   const [selectedClassId, setSelectedClassId] = useState('');
   const selected = data?.items.find((c) => c.id === selectedClassId) ?? data?.items[0];
-  const controls = <div className={styles.toolbar}><span>API 연동 확인 · 가상 데이터</span><label>클래스 <select aria-label="클래스 선택" value={selected?.id ?? ''} onChange={(e) => setSelectedClassId(e.target.value)} disabled={!data?.items.length}>{data?.items.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}</select></label><Button variant="secondary" onClick={onLogout}>로그아웃</Button>{sessionError && <span role="alert">{sessionError}</span>}</div>;
+  const classPicker = <label className={styles.classPicker}>클래스 <select aria-label="클래스 선택" value={selected?.id ?? ''} onChange={(e) => setSelectedClassId(e.target.value)} disabled={!data?.items.length}>{data?.items.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}</select></label>;
+  const logoutButton = <Button variant="secondary" onClick={onLogout}>로그아웃</Button>;
+  if (selected && session.nextAction === 'diagnostic') {
+    return <AppShell topBar={<TopBar userName={session.user.displayName} compact actions={logoutButton} />}>
+      {data && data.items.length > 1 && classPicker}
+      {sessionError && <p role="alert">{sessionError}</p>}
+      <DiagnosticPage key={selected.id} classId={selected.id} onContinue={refreshSession} />
+    </AppShell>;
+  }
+  const controls = <div className={styles.toolbar}><span>API 연동 확인 · 가상 데이터</span>{classPicker}{logoutButton}{sessionError && <span role="alert">{sessionError}</span>}</div>;
   if (error || !data || !selected || session.nextAction !== 'classes') return <AppShell topBar={<TopBar userName={session.user.displayName} />}>
     {controls}
     {error ? <div role="alert"><p>{error.message}</p><Button onClick={retry}>다시 불러오기</Button></div>
       : !data ? <p role="status">클래스를 불러오는 중…</p>
-      : session.nextAction === 'diagnostic' && selected ? <DiagnosticPage classId={selected.id} onContinue={refreshSession} />
       : <><h1>클래스 참여가 필요합니다</h1><p>클래스 개설·초대 수락 화면은 다음 개발 단계입니다. 이 연동본에서는 이미 가입된 가상 계정을 사용해 주세요.</p></>}
   </AppShell>;
   return <Workspace key={`${session.user.id}:${selected.id}`} session={session} currentClass={selected} controls={controls} />;

@@ -1,3 +1,4 @@
+import { Pause, Play } from 'lucide-react';
 import { Fragment, useEffect, useId, useRef, useState, type ReactNode } from 'react';
 import { api, SUBJECT_LABELS } from '../api';
 import type {
@@ -21,13 +22,14 @@ const LEVEL_LABELS: Record<LevelCode, Level> = {
 };
 
 const SKILL_LABELS = { listening: '듣기', reading: '읽기' } as const;
+const OPTION_NUMBERS = ['①', '②', '③', '④'];
 const AREAS: AreaCode[] = ['daily', 'korean', 'math', 'social', 'science'];
 const scoreFormat = new Intl.NumberFormat('ko-KR', { maximumFractionDigits: 2 });
 const scoreLabel = (score: number, maxScore: number) => `${scoreFormat.format(score)} / ${scoreFormat.format(maxScore)}점`;
 
 type Question = NonNullable<DiagnosticNext['question']>;
 type Assessment =
-  | { kind: 'start' }
+  | { kind: 'start'; grades: GradeBand[] }
   | { kind: 'question'; progress: DiagnosticStatus; question: Question }
   | { kind: 'results'; results: DiagnosticResults };
 
@@ -36,11 +38,14 @@ async function loadAssessment(): Promise<Assessment> {
   if (current.status === 'completed') {
     return { kind: 'results', results: await api.getDiagnosticResults() };
   }
-  const seededPlaceholder = current.status === 'in_progress'
-    && current.formId === 'form_mock_v1'
-    && current.completedQuestions === 0;
-  if (current.status === 'not_started' || seededPlaceholder) {
-    return { kind: 'start' };
+  if (!current.availableGradeBands && !current.gradeBand) {
+    throw new Error('브라우저에 연결된 백엔드가 최신 진단평가를 지원하지 않습니다. 프론트엔드와 같은 브랜치에서 백엔드를 다시 실행해 주세요.');
+  }
+  if (current.availableGradeBands?.length) {
+    return { kind: 'start', grades: current.availableGradeBands };
+  }
+  if (current.status === 'not_started') {
+    throw new Error('현재 시작할 수 있는 진단평가가 없습니다.');
   }
   const { progress, question } = await api.getDiagnosticQuestion();
   if (progress.status === 'completed') {
@@ -52,12 +57,24 @@ async function loadAssessment(): Promise<Assessment> {
   return { kind: 'question', progress, question };
 }
 
-function Page({ title, description, children }: { title: string; description?: string; children: ReactNode }) {
+function Page({ title, description, position, children }: {
+  title: string;
+  description?: string;
+  position?: { current: number; total: number };
+  children: ReactNode;
+}) {
   return (
     <article className={styles.page}>
       <header className={styles.heading}>
-        <h1>{title}</h1>
+        <div className={styles.titleRow}>
+          <h1>{title}</h1>
+          {position && <strong className={styles.position}>{position.current} / {position.total}</strong>}
+        </div>
         {description && <p className={styles.subtle}>{description}</p>}
+        {position && <ProgressBar
+          value={position.current / position.total}
+          label={`진단 문항 위치 ${position.current} / ${position.total}`}
+        />}
       </header>
       {children}
     </article>
@@ -97,7 +114,11 @@ function useAssessmentAction() {
   return { busy, error, run };
 }
 
-function GradeSelection({ classId, onStarted }: { classId: string; onStarted: () => void }) {
+function GradeSelection({ classId, grades, onStarted }: {
+  classId: string;
+  grades: GradeBand[];
+  onStarted: () => void;
+}) {
   const [grade, setGrade] = useState<GradeBand | null>(null);
   const { busy, error, run } = useAssessmentAction();
   const group = useId();
@@ -116,10 +137,10 @@ function GradeSelection({ classId, onStarted }: { classId: string; onStarted: ()
     >
       <fieldset className={`${styles.choices} ${styles.gradeChoices}`} disabled={busy}>
         <legend>응시할 학년을 선택하세요</legend>
-        {(Object.entries(GRADE_LABELS) as [GradeBand, string][]).map(([id, label]) => (
+        {grades.map((id) => (
           <label key={id} className={styles.choice} data-selected={grade === id}>
             <input type="radio" name={group} value={id} checked={grade === id} onChange={() => setGrade(id)} />
-            <span className={styles.choiceContent}><strong>{label}</strong></span>
+            <span className={styles.choiceContent}><strong>{GRADE_LABELS[id]}</strong></span>
           </label>
         ))}
       </fieldset>
@@ -142,31 +163,52 @@ function MarkedText({ text, spans }: { text: string; spans?: Question['promptSpa
 }
 
 function QuestionAudio({ src }: { src: string }) {
-  const [failed, setFailed] = useState(false);
-  const [revision, setRevision] = useState(0);
+  const audioRef = useRef<HTMLAudioElement>(null);
+  const [playback, setPlayback] = useState<'ready' | 'loading' | 'playing' | 'error'>('ready');
+
+  useEffect(() => {
+    const audio = audioRef.current;
+    return () => audio?.pause();
+  }, []);
+
+  async function togglePlayback() {
+    const audio = audioRef.current;
+    if (!audio) return;
+    if (!audio.paused) {
+      audio.pause();
+      return;
+    }
+    if (playback === 'error') audio.load();
+    setPlayback('loading');
+    try {
+      await audio.play();
+      setPlayback('playing');
+    } catch {
+      setPlayback('error');
+    }
+  }
 
   return (
-    <div className={styles.audio}>
-      <strong>듣기 음원</strong>
+    <>
       <audio
-        key={revision}
+        ref={audioRef}
         src={src}
-        controls
         preload="metadata"
-        aria-label="듣기 음원"
-        onError={() => setFailed(true)}
+        onPause={() => setPlayback('ready')}
+        onEnded={() => setPlayback('ready')}
+        onError={() => setPlayback('error')}
+      />
+      <Button
+        className={styles.listenButton}
+        variant="secondary"
+        icon={playback === 'playing' ? <Pause size={16} aria-hidden="true" /> : <Play size={16} aria-hidden="true" />}
+        disabled={playback === 'loading'}
+        onClick={() => void togglePlayback()}
       >
-        이 브라우저에서는 음원을 재생할 수 없습니다.
-      </audio>
-      {failed && (
-        <div className={styles.retry}>
-          <p role="alert">음원을 불러오지 못했습니다.</p>
-          <Button variant="secondary" onClick={() => { setFailed(false); setRevision((value) => value + 1); }}>
-            음원 다시 불러오기
-          </Button>
-        </div>
-      )}
-    </div>
+        {{ ready: '듣기', loading: '음원 준비 중…', playing: '일시정지', error: '다시 듣기' }[playback]}
+      </Button>
+      {playback === 'error' && <p className={styles.audioError} role="alert">음원을 재생할 수 없습니다. 다시 들어 보세요.</p>}
+    </>
   );
 }
 
@@ -212,8 +254,12 @@ function QuestionPanel({ progress, question, onSaved }: {
   const sectionProgress = question.sectionNumber != null && question.sectionTotal != null
     ? `문항 ${question.sectionNumber} / ${question.sectionTotal}`
     : `문항 ${question.sequence}`;
+  const nextAction = progress.completedQuestions + 1 === progress.totalQuestions ? '결과 보기' : '다음';
 
-  useEffect(() => { prompt.current?.focus(); }, []);
+  useEffect(() => {
+    window.scrollTo(0, 0);
+    prompt.current?.focus({ preventScroll: true });
+  }, []);
 
   function submit(optionId: string | null) {
     void run(async () => {
@@ -223,32 +269,24 @@ function QuestionPanel({ progress, question, onSaved }: {
   }
 
   return (
-    <>
-      <div className={styles.progress}>
-        <div className={styles.progressLabel}>
-          <span>진단 진행률</span>
-          <strong>{progress.completedQuestions} / {progress.totalQuestions}문항 완료</strong>
-        </div>
-        <ProgressBar
-          value={progress.totalQuestions ? progress.completedQuestions / progress.totalQuestions : 0}
-          label="진단 진행률"
-        />
-      </div>
-      <form
-        className={styles.panel}
-        onSubmit={(event) => { event.preventDefault(); if (selected !== null) submit(selected); }}
-      >
-        <div className={styles.sectionLabel}>
-          <span>{SUBJECT_LABELS[question.area]} · {SKILL_LABELS[question.skill]}</span>
-          <span>{sectionProgress}</span>
+    <form
+      className={styles.questionForm}
+      onSubmit={(event) => { event.preventDefault(); if (selected !== null) submit(selected); }}
+    >
+      <div className={`${styles.panel} ${styles.questionCard}`}>
+        <div className={styles.questionHeader}>
+          <div className={styles.sectionLabel}>
+            <span className={styles.skill} data-skill={question.skill}>{SKILL_LABELS[question.skill]}</span>
+            {question.audioUrl && <QuestionAudio src={question.audioUrl} />}
+          </div>
+          <span className={styles.sectionProgress}>{SUBJECT_LABELS[question.area]} · {sectionProgress}</span>
         </div>
         <h2 ref={prompt} tabIndex={-1} className={styles.prompt}>
           <MarkedText text={question.prompt} spans={question.promptSpans} />
         </h2>
-        {question.audioUrl && <QuestionAudio src={question.audioUrl} />}
         <QuestionContent question={question} />
-        <fieldset className={`${styles.choices} ${hasImageChoice ? styles.imageChoices : ''}`} disabled={busy}>
-          <legend>답을 골라 주세요</legend>
+        <fieldset className={`${styles.choices} ${styles.questionChoices} ${hasImageChoice ? styles.imageChoices : ''}`} disabled={busy}>
+          <legend className={styles.visuallyHidden}>답을 골라 주세요</legend>
           {question.options.map((option, index) => (
             <label key={option.id} className={styles.choice} data-selected={selected === option.id}>
               <input
@@ -258,9 +296,11 @@ function QuestionPanel({ progress, question, onSaved }: {
                 checked={selected === option.id}
                 onChange={() => setSelected(option.id)}
               />
+              <span className={styles.optionNumber} aria-hidden="true">{OPTION_NUMBERS[index] ?? index + 1}</span>
               <span className={styles.choiceContent}>
-                {option.text || `보기 ${index + 1}`}
-                {option.imageUrl && <img src={option.imageUrl} alt="" />}
+                {option.imageUrl
+                  ? <><span className={styles.visuallyHidden}>{option.text}</span><img src={option.imageUrl} alt="" /></>
+                  : option.text}
               </span>
             </label>
           ))}
@@ -271,12 +311,14 @@ function QuestionPanel({ progress, question, onSaved }: {
             <Button variant="secondary" onClick={onSaved}>진행 상황 다시 불러오기</Button>
           </div>
         )}
-        <div className={styles.actions}>
-          <Button variant="secondary" disabled={busy} onClick={() => submit(null)}>모르겠어요</Button>
-          <Button type="submit" disabled={busy || selected === null}>{busy ? '저장하는 중…' : '답안 제출'}</Button>
-        </div>
-      </form>
-    </>
+      </div>
+      <div className={styles.actions}>
+        <Button variant="secondary" disabled={busy} onClick={() => submit(null)}>모르겠어요</Button>
+        <Button type="submit" disabled={busy || selected === null}>
+          {busy ? '저장하는 중…' : nextAction}
+        </Button>
+      </div>
+    </form>
   );
 }
 
@@ -370,11 +412,16 @@ function Results({ results, onContinue }: { results: DiagnosticResults; onContin
 export function DiagnosticPage({ classId, onContinue }: { classId: string; onContinue: () => Promise<void> }) {
   const { data, error, retry } = useApi(loadAssessment, [classId]);
   if (data?.kind === 'results') return <Results results={data.results} onContinue={onContinue} />;
+  if (data?.kind === 'question') return (
+    <Page title="진단 검사" position={{ current: data.progress.completedQuestions + 1, total: data.progress.totalQuestions }}>
+      <QuestionPanel key={data.question.id} progress={data.progress} question={data.question} onSaved={retry} />
+    </Page>
+  );
   return (
     <Page title="한국어 진단평가">
-      {!data ? <LoadFeedback error={error} retry={retry} /> : data.kind === 'start'
-        ? <GradeSelection classId={classId} onStarted={retry} />
-        : <QuestionPanel key={data.question.id} progress={data.progress} question={data.question} onSaved={retry} />}
+      {data
+        ? <GradeSelection classId={classId} grades={data.grades} onStarted={retry} />
+        : <LoadFeedback error={error} retry={retry} />}
     </Page>
   );
 }

@@ -1,7 +1,7 @@
 .shell { display: flex; flex-direction: column; min-height: 100vh; }
 .row { display: flex; flex: 1; min-height: 0; }
 .main { display: flex; flex-direction: column; gap: 22px; flex: 1; min-width: 0; padding: 30px var(--space-xxl) var(--space-xl); }
-.centered { padding: var(--space-xxl) clamp(16px, 8vw, 120px); }
+.centered { padding: clamp(var(--space-l), 4vh, var(--space-xxl)) clamp(var(--space-m), 8vw, 120px) var(--space-xxl); }
 .header { display: flex; justify-content: space-between; align-items: center; }
 .titleWrap { display: flex; align-items: baseline; gap: 14px; }
 .title { margin: 0; font-size: var(--font-size-page-title); font-weight: var(--font-weight-bold); }

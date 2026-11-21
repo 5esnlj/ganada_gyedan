@@ -74,6 +74,14 @@ def progress(
     )
 
 
+def can_select_grade_band(diagnostic: Record | None) -> bool:
+    return diagnostic is None or (
+        diagnostic.get("demoSeed", False)
+        and diagnostic["status"] == "in_progress"
+        and not diagnostic["answers"]
+    )
+
+
 def start(
     state: MemoryStore,
     user: Record,
@@ -83,14 +91,7 @@ def start(
 ) -> DiagnosticStatus:
     membership(state, user, request.classId, "student")
     diagnostic = state.diagnostics.get(user["id"])
-    replace_demo_seed = (
-        request.gradeBand is not None
-        and diagnostic is not None
-        and diagnostic.get("demoSeed", False)
-        and diagnostic["status"] == "in_progress"
-        and not diagnostic["answers"]
-    )
-    if diagnostic is None or replace_demo_seed:
+    if diagnostic is None or (request.gradeBand is not None and can_select_grade_band(diagnostic)):
         form = (
             assessment_forms.get(request.gradeBand)
             if request.gradeBand is not None

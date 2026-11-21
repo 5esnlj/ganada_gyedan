@@ -28,6 +28,7 @@ class DiagnosticStatus(BaseModel):
     completedQuestions: int
     nextQuestionId: str | None
     gradeBand: GradeBand | None = None
+    availableGradeBands: list[GradeBand] = Field(default_factory=list)
 
 
 class DiagnosticOption(Option):

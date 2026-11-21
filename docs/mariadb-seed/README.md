@@ -44,4 +44,4 @@ WHERE u.login_id = 's_pending'
 GROUP BY u.login_id, d.status;
 ```
 
-위 앱 검사는 MariaDB 연결 코드가 적용된 뒤에 가능합니다. SQL을 가져온 상태에서는 기존 개발 서버가 현재 메모리 데이터로 동작합니다.
+위 앱 검사를 시작하기 전에 [Windows MariaDB 연결 안내](../../README.md#windows에서-mariadb-연결)에 따라 백엔드 설정을 완료하세요.

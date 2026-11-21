@@ -12,6 +12,7 @@ from app.core.state import Store
 from app.materials import service
 from app.materials.dto import MaterialOut, MaterialPatch, SourceCreate, SourceOut, UploadOut
 from app.materials.pdf import MAX_UPLOAD_BYTES
+from app.mariadb.files import read_source_file
 
 router = APIRouter()
 
@@ -38,7 +39,7 @@ def download(fileId: str, request: Request, store: Store):
     file = service.require_file(store, user, fileId)
     filename = quote(file["name"], safe="")
     return Response(
-        file["data"],
+        read_source_file(file) if "objectKey" in file else file["data"],
         media_type=file["mimeType"],
         headers={
             "Content-Disposition": f"attachment; filename=\"document.pdf\"; filename*=UTF-8''{filename}",

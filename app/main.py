@@ -12,7 +12,7 @@ from app.core.errors import APIError, ERROR_RESPONSES, api_error, http_error, va
 from app.core.openapi import add_request_headers
 from app.core.state import MemoryStore
 from app.dashboard.router import router as dashboard_router
-from app.database import check_connection
+from app.database import check_connection, configured
 from app.diagnostic.assessment import load_assessment_forms
 from app.diagnostic.fixtures import demo_provider, seed_diagnostics
 from app.diagnostic.forms import FormProvider, StaticFormProvider
@@ -32,18 +32,25 @@ class Health(BaseModel):
     isSynthetic: bool
 
 
+MARIADB_WRITES = {
+    "/api/v1/auth/login", "/api/v1/auth/logout",
+    "/api/v1/diagnostic/start", "/api/v1/diagnostic/answers",
+}
+
+
 def create_app(
     *,
     store: MemoryStore | None = None,
     diagnostic_form_provider: FormProvider | None = None,
     secure_cookies: bool = False,
 ) -> FastAPI:
-    demo = store is None
-    state = MemoryStore() if demo else store
+    database_mode = store is None and configured()
+    demo = store is None and not database_mode
+    state = store if store is not None else MemoryStore()
 
     @asynccontextmanager
     async def lifespan(application: FastAPI):
-        application.state.database_connected = await asyncio.to_thread(check_connection)
+        application.state.database_connected = database_mode and await asyncio.to_thread(check_connection)
         yield
 
     application = FastAPI(
@@ -73,6 +80,12 @@ def create_app(
     async def serialize_api(request, call_next):
         if not request.url.path.startswith("/api/v1/"):
             return await call_next(request)
+        if (getattr(application.state, "database_connected", False)
+                and request.method not in {"GET", "HEAD", "OPTIONS"}
+                and request.url.path.rstrip("/") not in MARIADB_WRITES):
+            return await api_error(request, APIError(
+                501, "MARIADB_WRITE_UNAVAILABLE", "이 작업의 MariaDB 저장은 아직 지원하지 않습니다.",
+            ))
         async with request_lock:
             response = await call_next(request)
         # All learning data is private. Download and JSON responses follow the same policy.
@@ -92,7 +105,11 @@ def create_app(
 
     @api.get("/health", response_model=Health, tags=["공통"])
     def health():
-        return Health(isSynthetic=demo, databaseReachableAtStartup=getattr(application.state, "database_connected", False))
+        connected = getattr(application.state, "database_connected", False)
+        return Health(
+            mode="mariadb" if connected else "memory", isSynthetic=demo,
+            databaseConnected=connected, databaseReachableAtStartup=connected,
+        )
 
     for router in (identity_router, classes_router, diagnostic_router, materials_router, quizzes_router, dashboard_router):
         api.include_router(router)

@@ -2,7 +2,7 @@ from datetime import datetime, timedelta, timezone
 from secrets import token_urlsafe
 
 from app.classes.service import active_class_memberships
-from app.core.access import session_digest
+from app.core.access import session_csrf, session_digest
 from app.core.errors import fail
 from app.core.state import MemoryStore, Record
 from app.identity.dto import Login, NextAction, PublicUser, SessionOut
@@ -30,9 +30,11 @@ def session_response(state: MemoryStore, user: Record, csrf_token: str) -> Sessi
     )
 
 
-def login(state: MemoryStore, body: Login, old_token: str | None) -> tuple[str, SessionOut]:
+def login(
+    state: MemoryStore, body: Login, old_token: str | None, *, password_hash: str | None = None
+) -> tuple[str, SessionOut]:
     user = next((user for user in state.users.values() if user["loginId"] == body.loginId), None)
-    encoded = user.get("passwordHash") if user else None
+    encoded = (password_hash or user.get("passwordHash")) if user else None
     valid_password = verify_password(
         body.password.get_secret_value(), encoded or demo_password_hash()
     )
@@ -48,7 +50,7 @@ def login(state: MemoryStore, body: Login, old_token: str | None) -> tuple[str, 
 
     now = datetime.now(timezone.utc)
     token = token_urlsafe(32)
-    csrf_token = token_urlsafe(32)
+    csrf_token = session_csrf(token)
     payload = session_response(state, user, csrf_token)
     if old_token:
         state.sessions.pop(session_digest(old_token), None)

@@ -36,13 +36,16 @@ def extract_source_text(data: bytes) -> tuple[str, list[dict[str, str]]]:
     source_text = "\n\n".join(page_text)
     if not source_text:
         fail(422, "PDF_TEXT_REQUIRED", "텍스트를 선택할 수 있는 PDF 파일을 올려 주세요.")
+    return source_text, source_sentences(source_text)
+
+
+def source_sentences(source_text: str) -> list[dict[str, str]]:
     segments = [
         segment.strip()
         for segment in re.split(r"[\r\n]+|(?<=[.!?。！？])[^\S\r\n]+", source_text)
         if segment.strip()
     ]
-    sentences = [
+    return [
         {"id": f"s{position}", "text": text}
         for position, text in enumerate(segments, 1)
     ]
-    return source_text, sentences

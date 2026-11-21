@@ -39,6 +39,13 @@ class MemoryStore:
 
 
 def get_store(request: Request) -> MemoryStore:
+    if getattr(request.app.state, "database_connected", False):
+        if not hasattr(request.state, "database_store"):
+            from app.core.access import COOKIE_NAME
+            from app.mariadb.store import load_store
+
+            request.state.database_store = load_store(request.cookies.get(COOKIE_NAME))
+        return request.state.database_store
     return request.app.state.store
 
 

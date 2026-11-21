@@ -122,7 +122,7 @@ def list_sources(
 
 def require_file(state: MemoryStore, user: dict, file_id: str) -> dict:
     file = state.files.get(file_id)
-    if not file or not file.get("data"):
+    if not file or not (file.get("data") or file.get("objectKey")):
         fail(404, "NOT_FOUND", "파일을 찾을 수 없습니다.")
     class_id = file["classId"]
     member = membership(state, user, class_id)

@@ -15,6 +15,11 @@ def session_digest(token: str) -> str:
     return sha256(token.encode()).hexdigest()
 
 
+def session_csrf(token: str) -> str:
+    # Derive a separate value without storing the original session token or exposing it to JS.
+    return sha256(b"ganada:csrf:v1\0" + token.encode()).hexdigest()
+
+
 def get_session(request: Request) -> Record:
     state = get_store(request)
     token = request.cookies.get(COOKIE_NAME)

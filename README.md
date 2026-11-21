@@ -1,6 +1,6 @@
 # 가나다계단 FastAPI 백엔드
 
-교사·학생 로그인부터 클래스, 최초 진단, 자료·문항 검토와 배포, 학습 풀이까지 실행할 수 있는 개발 서버입니다. 기본 실행은 **가상 계정과 자료를 사용하는 단일 프로세스 메모리 모드**입니다. 세션, 업로드, 초안, 답안과 진단 진행은 서버를 재시작하면 초기화됩니다.
+교사·학생 로그인부터 클래스, 최초 진단, 자료·문항 검토와 배포, 학습 풀이까지 실행할 수 있는 개발 서버입니다. DB 설정 없이 실행하면 **메모리 모드**로 동작하며 변경 내용은 서버 재시작 시 초기화됩니다. 기존 MariaDB를 쓰려면 아래 Windows 연결 안내를 따르세요.
 
 ## VS Code에서 시작
 
@@ -75,15 +75,35 @@ git pull --ff-only origin feat/korean-assessment
 
 전체 기능의 DML 대응, 팀원 기능 연결 지점, 다음 구현 순서는 [백엔드 개발 계획](docs/backend-plan.md)에서 확인할 수 있습니다.
 
-## Windows에서 MariaDB 준비
+## Windows에서 MariaDB 연결
 
-[예시 SQL과 ZIP](docs/mariadb-seed/)에서 기존 `ganada`를 선택한 상태로 `02_seed_data.sql`과 `03_verify_data.sql`을 실행합니다. 이미 테이블 20개가 있는 경우 생성 SQL은 건너뜁니다.
+기존 `ganada`에 예시 데이터 검증까지 마쳤다면 SQL을 다시 실행할 필요가 없습니다. 처음 준비하는 경우 [예시 SQL과 ZIP](docs/mariadb-seed/)을 참고하세요.
+
+`ganada_app` 전용 계정이 없다면 HeidiSQL의 관리자 세션에서 아래 SQL을 한 번 실행합니다. 비밀번호 자리에는 로컬에서 정한 값으로 바꾸세요. 계정이 이미 있으면 `CREATE USER`를 생략합니다.
+
+```sql
+CREATE USER 'ganada_app'@'127.0.0.1' IDENTIFIED BY '여기에_새_비밀번호';
+GRANT SELECT ON ganada.* TO 'ganada_app'@'127.0.0.1';
+GRANT INSERT, UPDATE ON ganada.user_sessions TO 'ganada_app'@'127.0.0.1';
+GRANT INSERT, UPDATE ON ganada.student_diagnostics TO 'ganada_app'@'127.0.0.1';
+GRANT INSERT ON ganada.diagnostic_answers TO 'ganada_app'@'127.0.0.1';
+GRANT INSERT ON ganada.diagnostic_part_results TO 'ganada_app'@'127.0.0.1';
+GRANT INSERT ON ganada.diagnostic_area_results TO 'ganada_app'@'127.0.0.1';
+```
+
+VS Code의 저장소 루트에서 PowerShell로 실행합니다.
 
 ```powershell
 .\.venv\Scripts\python.exe -m pip install -r requirements-mariadb.txt
-Copy-Item .env.example .env
+if (-not (Test-Path .env)) { Copy-Item .env.example .env }
 ```
 
-`.env`에서 로컬 DB 계정과 비밀번호를 입력합니다. 예시 주소는 현재 Windows 설정인 `127.0.0.1:3306`, 스키마는 `ganada`입니다. 앱에는 가급적 `ganada`에 필요한 권한만 부여한 계정을 사용합니다. 사진의 `root`는 HeidiSQL의 관리용 계정입니다. `.env`는 Git에서 제외됩니다.
+`.env`에서 `GANADA_DB_HOST=127.0.0.1`, `GANADA_DB_PORT=3306`, `GANADA_DB_NAME=ganada`를 확인합니다. `GANADA_DB_USER`와 `GANADA_DB_PASSWORD`에는 DB 계정과 비밀번호를 넣으세요. 이 비밀번호는 브라우저에서 쓰는 예시 계정 비밀번호와 별개이며, `.env`는 Git에서 제외됩니다. 백엔드를 재시작할 때 F5 구성이 이 파일을 읽습니다.
 
-F5로 백엔드를 시작하고 `/api/v1/health`에서 `databaseReachableAtStartup: true`를 확인합니다. 이는 시작 시 MariaDB 인증과 20개 테이블 확인이 성공했다는 뜻입니다. 로그인·진단·자료 데이터는 아직 메모리에서 처리하며, `databaseConnected`는 이 데이터 저장 전환이 적용될 때까지 `false`입니다.
+### 동작 확인
+
+1. F5로 백엔드를 켭니다. `http://127.0.0.1:8081/api/v1/health`에서 `mode: "mariadb"`와 `databaseConnected: true`가 표시되어야 합니다. 시작이 실패하면 터미널의 메시지에서 MariaDB 서비스, 스키마, 계정 권한을 확인하세요.
+2. 프론트엔드에서 교사 `t_math`와 `t_science`로 각각 로그인합니다. 두 계정은 같은 반을 보고, 자료 목록은 담당 교과에 해당하는 자료만 보여야 합니다.
+3. 학생 `s_pending`으로 로그인해 학년군을 고르고 첫 답안을 제출합니다. F5 백엔드를 중지했다가 다시 켜고 브라우저를 새로 고침합니다. 두 번째 문항부터 열린다면 저장과 이어 풀기가 확인된 것입니다. DB에서 확인하려면 [답안 확인 SQL](docs/mariadb-seed/README.md#앱-연결-후-검사할-흐름)을 실행합니다.
+
+MariaDB 모드에서는 계정, 세션, 클래스, 진단 문항·답안·결과, 배포 자료와 문제를 DB에서 조회합니다. 진단 시작·답안 제출과 채점 결과, 세션 생성·종료를 DB에 기록합니다. 클래스 생성·초대, 자료 및 문제 쓰기, 일반 학습 문제 풀이 저장은 아직 이 모드에 연결되지 않아 해당 쓰기 API는 501을 반환합니다. DB 접속이 끊기면 메모리로 자동 전환하지 않습니다.

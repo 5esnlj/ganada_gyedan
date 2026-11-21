@@ -18,7 +18,17 @@ python -m uvicorn app.main:app --host 127.0.0.1 --port 8081
 
 VS Code에서 `Python: Select Interpreter`로 `.venv`의 인터프리터를 선택하면 **가나다계단 FastAPI** 구성으로 F5 디버깅할 수 있습니다. 서버의 `/docs`에서 Swagger UI, `/openapi.json`에서 현재 구현된 계약, `/api/v1/health`에서 실행 상태를 확인할 수 있습니다.
 
-첨부 ZIP의 **`frontend/`**에서 `npm ci`, `npm run dev`를 실행합니다. 해당 Vite 설정이 `/api` 요청을 백엔드의 8081 포트로 전달하므로 `VITE_API_BASE_URL=/api/v1`을 사용하면 됩니다. 백엔드 저장소에는 첨부 프론트엔드 사본을 추가하지 않았습니다. 첨부 프론트엔드가 화면을 제공하는 범위는 교사 대시보드·교사 원본 자료 목록·학생 대시보드와 연동용 로그인·클래스 선택입니다. 나머지 구현 경로는 Swagger나 테스트에서 실행할 수 있습니다.
+백엔드를 8081 포트에서 실행한 상태에서 별도 터미널을 엽니다.
+
+```bash
+cd frontend
+npm ci
+npm run dev
+```
+
+Vite는 기본 5173 포트에서 실행되며 `/api` 요청을 백엔드의 8081 포트로 전달합니다. API 접두사는 `/api/v1`입니다. 현재 UI는 교사 대시보드, 교사 원본 자료 목록, 학생 대시보드와 연동용 로그인·클래스 선택을 제공합니다.
+
+MariaDB DDL·DML, API 명세·mock 서버·테스트, 비교용 프론트엔드 원본, 검토 보고서와 화면 캡처는 [인수인계 자료](docs/handoff/README.md)에 있습니다.
 
 ## 가상 계정
 

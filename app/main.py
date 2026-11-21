@@ -11,6 +11,7 @@ from app.core.errors import APIError, ERROR_RESPONSES, api_error, http_error, va
 from app.core.openapi import add_request_headers
 from app.core.state import MemoryStore
 from app.dashboard.router import router as dashboard_router
+from app.diagnostic.assessment import load_assessment_forms
 from app.diagnostic.fixtures import demo_provider, seed_diagnostics
 from app.diagnostic.forms import FormProvider, StaticFormProvider
 from app.diagnostic.router import router as diagnostic_router
@@ -51,6 +52,7 @@ def create_app(
         if demo:
             seed_diagnostics(state, diagnostic_form_provider)
     application.state.diagnostic_form_provider = diagnostic_form_provider
+    application.state.diagnostic_assessment_forms = load_assessment_forms()
 
     application.add_exception_handler(APIError, api_error)
     application.add_exception_handler(RequestValidationError, validation_error)

@@ -39,7 +39,7 @@ def get_form_provider(request: Request) -> FormProvider:
 Forms = Annotated[FormProvider, Depends(get_form_provider)]
 
 
-@router.get("/diagnostic", tags=["진단"])
+@router.get("/diagnostic", tags=["진단"], response_model_exclude_unset=True)
 def diagnostic(request: Request, state: Store, forms: Forms) -> DiagnosticStatus:
     user = auth(request, "student")
     record = state.diagnostics.get(user["id"])
@@ -47,27 +47,27 @@ def diagnostic(request: Request, state: Store, forms: Forms) -> DiagnosticStatus
 
 
 @router.post(
-    "/diagnostic/start", tags=["진단"],
+    "/diagnostic/start", tags=["진단"], response_model_exclude_unset=True,
     responses={503: {"model": ErrorOut, "description": "공개된 진단 문항집 없음"}},
 )
 def diagnostic_start(
     body: DiagnosticStart, request: Request, state: Store, forms: Forms
 ) -> DiagnosticStatus:
     user = auth(request, "student")
-    return start(state, user, body.classId, forms)
+    return start(state, user, body, forms, request.app.state.diagnostic_assessment_forms)
 
 
-@router.get("/diagnostic/next-question", tags=["진단"])
+@router.get("/diagnostic/next-question", tags=["진단"], response_model_exclude_unset=True)
 def diagnostic_next(request: Request, state: Store) -> DiagnosticNext:
     return next_question(active_diagnostic(state, auth(request, "student")))
 
 
-@router.post("/diagnostic/answers", tags=["진단"])
+@router.post("/diagnostic/answers", tags=["진단"], response_model_exclude_unset=True)
 def diagnostic_answer(body: DiagnosticAnswer, request: Request, state: Store) -> DiagnosticAnswerOut:
     return submit_answer(active_diagnostic(state, auth(request, "student")), body)
 
 
-@router.get("/diagnostic/results", tags=["진단"])
+@router.get("/diagnostic/results", tags=["진단"], response_model_exclude_unset=True)
 def diagnostic_results(request: Request, state: Store) -> DiagnosticResults:
     user = auth(request, "student")
     results = completed_results(state, user["id"])
@@ -83,7 +83,10 @@ def students(classId: str, request: Request, state: Store) -> StudentList:
     return StudentList(items=class_students(state, classId))
 
 
-@router.get("/classes/{classId}/students/{memberId}/diagnostic", tags=["학생 수준"])
+@router.get(
+    "/classes/{classId}/students/{memberId}/diagnostic",
+    tags=["학생 수준"], response_model_exclude_unset=True,
+)
 def student_diagnostic(
     classId: str, memberId: str, request: Request, state: Store
 ) -> StudentDiagnosticOut:

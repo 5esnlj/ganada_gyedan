@@ -1,7 +1,10 @@
 import type { Role } from '../types';
 import { adaptSources, adaptStudentDashboard, adaptTeacherDashboard } from './adapters';
 import { request, setCsrfToken } from './client';
-import type { AreaCode, ClassOut, ListOut, SessionOut, SourceOut, StudentDashboardOut, TeacherDashboardOut } from './wire';
+import type {
+  AreaCode, ClassOut, DiagnosticAnswerOut, DiagnosticNext, DiagnosticResults, DiagnosticStatus, GradeBand,
+  ListOut, SessionOut, SourceOut, StudentDashboardOut, TeacherDashboardOut,
+} from './wire';
 export * from './types';
 export { ApiError } from './client';
 export { SUBJECT_LABELS } from './adapters';
@@ -11,6 +14,15 @@ export const api = {
   me: () => saveSession(request<SessionOut>('/auth/me')),
   logout: async () => { await request<void>('/auth/logout', { method: 'POST' }); setCsrfToken(null); },
   getClasses: () => request<ListOut<ClassOut>>('/classes'),
+  getDiagnostic: () => request<DiagnosticStatus>('/diagnostic'),
+  startDiagnostic: (classId: string, gradeBand: GradeBand) => request<DiagnosticStatus>('/diagnostic/start', {
+    method: 'POST', body: JSON.stringify({ classId, gradeBand }),
+  }),
+  getDiagnosticQuestion: () => request<DiagnosticNext>('/diagnostic/next-question'),
+  submitDiagnosticAnswer: (questionId: string, selectedOptionId: string | null) => request<DiagnosticAnswerOut>('/diagnostic/answers', {
+    method: 'POST', body: JSON.stringify({ questionId, selectedOptionId }),
+  }),
+  getDiagnosticResults: () => request<DiagnosticResults>('/diagnostic/results'),
   getClassDashboard: async (classId: string) => adaptTeacherDashboard(await request<TeacherDashboardOut>(`/classes/${encodeURIComponent(classId)}/dashboard`)),
   getMaterials: async (classId: string, subject: AreaCode) => adaptSources((await request<ListOut<SourceOut>>(`/classes/${encodeURIComponent(classId)}/sources`)).items, subject),
   getStudentHome: async (classId: string, area: AreaCode = 'daily') => adaptStudentDashboard(await request<StudentDashboardOut>(`/classes/${encodeURIComponent(classId)}/dashboard?area=${area}`)),

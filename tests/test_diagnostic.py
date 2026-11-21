@@ -141,3 +141,113 @@ def test_form_rejects_incomplete_rubric_groups():
     data["questions"] = data["questions"][:-1]
     with pytest.raises(ValidationError, match="must total 100 points"):
         DiagnosticForm.model_validate(data)
+
+
+@pytest.mark.parametrize(("band", "other", "first_answer"), [("g34", "g56", "2"), ("g56", "g34", "4")])
+def test_attached_assessment_uses_pinned_form_and_source_scoring(band, other, first_answer):
+    app = create_app()
+    form = app.state.diagnostic_assessment_forms[band]
+    with login(app, "s_pending") as student:
+        assert student.get("/diagnostic").json()["formId"] == "form_mock_v1"
+        started = student.post("/diagnostic/start", json={"classId": "cls_1", "gradeBand": band})
+        assert started.status_code == 200, started.text
+        assert started.json() == {
+            "status": "in_progress", "formId": f"official-{band}-v1",
+            "totalQuestions": 35, "completedQuestions": 0,
+            "nextQuestionId": f"{band}-l01", "gradeBand": band,
+        }
+        repeated = student.post("/diagnostic/start", json={"classId": "cls_1", "gradeBand": other})
+        assert repeated.json()["gradeBand"] == band
+        first = student.get("/diagnostic/next-question").json()["question"]
+        assert first["skill"] == "listening" and first["sectionNumber"] == 1
+        assert first["sectionTotal"] == 15 and first["maxPoints"] == 4
+        assert first["audioUrl"].startswith(f"/diagnostic-assets/{band}/")
+        assert first["isSynthetic"] is False
+        assert "correctOptionId" not in first
+        assert "tier" not in first
+        assert answer(student, f"{other}-l01", "1").status_code == 409
+        assert answer(student, first["id"], first_answer).status_code == 200
+        assert answer(student, first["id"], first_answer).json()["replayed"]
+        second = student.get("/diagnostic/next-question").json()["question"]
+        assert second["id"] == f"{band}-l02"
+        assert len(second["options"]) == 4
+        assert all(option["imageUrl"].startswith(f"/diagnostic-assets/{band}/") for option in second["options"])
+        assert student.post("/auth/logout").status_code == 204
+
+    with login(app, "s_pending") as resumed:
+        next_item = resumed.get("/diagnostic/next-question").json()
+        assert next_item["progress"]["gradeBand"] == band
+        assert next_item["progress"]["completedQuestions"] == 1
+        assert next_item["question"]["id"] == f"{band}-l02"
+
+        for item in form.questions[1:15]:
+            response = answer(resumed, item.display.id, item.correct_option_id)
+            assert response.status_code == 200, response.text
+        reading = resumed.get("/diagnostic/next-question").json()["question"]
+        assert reading["id"] == f"{band}-r01"
+        assert reading["sectionNumber"] == 1 and reading["sectionTotal"] == 20
+        assert reading["imageUrl"].startswith(f"/diagnostic-assets/{band}/")
+
+        for item in form.questions[15:]:
+            response = answer(resumed, item.display.id, item.correct_option_id)
+            assert response.status_code == 200, response.text
+        assert response.json()["progress"]["status"] == "completed"
+        assert response.json()["progress"]["completedQuestions"] == 35
+
+        results = resumed.get("/diagnostic/results").json()
+        assert results["isSynthetic"] is False
+        assert len(results["parts"]) == 10 and len(results["areas"]) == 5
+        assert all(part["score"] == part["maxScore"] == 100 for part in results["parts"])
+        assert all(area["score"] == area["maxScore"] == 200 for area in results["areas"])
+        summary = results["assessmentSummary"]
+        assert summary["gradeBand"] == band
+        assert summary["listening"] == {"score": 100, "maxScore": 100, "percent": 100, "level": "advanced"}
+        assert summary["reading"] == summary["listening"]
+        assert summary["overall"] == {"score": 200, "maxScore": 200, "level": "advanced"}
+        assert all(subject["level"] == "advanced" for subject in summary["subjects"])
+        assert summary["communication"] == {
+            "score": 52, "maxScore": 52, "percent": 100, "questionCount": 11, "status": "adequate",
+        }
+        assert resumed.get("/classes/cls_1/dashboard").status_code == 200
+
+    with login(app, "t_math", "teacher") as teacher:
+        details = teacher.get("/classes/cls_1/students/mem_s_pending/diagnostic").json()
+        assert details["results"]["assessmentSummary"] == summary
+
+
+def test_attached_assessment_respects_raw_point_criterion_and_failed_thresholds():
+    from app.diagnostic.assessment import load_assessment_forms
+    from app.diagnostic.grading import grade
+
+    form = load_assessment_forms()["g34"]
+    answers = {
+        item.display.id: (
+            item.correct_option_id if item.display.area == "korean" and item.tier != "beginner" else None
+        )
+        for item in form.questions
+    }
+    results = grade(form, answers)
+    summary = results.assessmentSummary
+    korean = summary.subjects[0]
+    assert korean.area == "korean"
+    assert korean.percent > 70
+    assert korean.scoreLevel == "advanced"
+    assert korean.criterionLevel == "below_beginner"
+    assert korean.level == "below_beginner"
+    assert korean.tierCounts["beginner"].correct == 0
+    assert korean.tierCounts["advanced"].correct == 2
+    assert summary.overall.level == "below_beginner"
+    assert summary.communication.status == "needs_improvement"
+    assert results.areas[0].score == 2 * korean.percent
+    assert results.areas[0].level == korean.level
+
+
+def test_started_legacy_attempt_cannot_be_replaced_by_grade_selection():
+    app = create_app()
+    with login(app, "s_pending") as student:
+        assert answer(student, "dq_001", "1").status_code == 200
+        response = student.post("/diagnostic/start", json={"classId": "cls_1", "gradeBand": "g34"})
+        assert response.status_code == 200
+        assert response.json()["formId"] == "form_mock_v1"
+        assert response.json()["completedQuestions"] == 1
+        assert "gradeBand" not in response.json()

@@ -1,3 +1,5 @@
+from collections.abc import Mapping
+
 from app.core.access import active_student_membership, membership
 from app.core.errors import fail
 from app.core.state import MemoryStore, Record, timestamp
@@ -8,8 +10,10 @@ from .dto import (
     DiagnosticNext,
     DiagnosticQuestion,
     DiagnosticResults,
+    DiagnosticStart,
     DiagnosticStateCode,
     DiagnosticStatus,
+    GradeBand,
     StudentRow,
 )
 from .forms import DiagnosticForm, DiagnosticItem, FormProvider
@@ -62,22 +66,39 @@ def progress(
     form = diagnostic["form"]
     answers = diagnostic["answers"]
     pending = pending_question(form, answers)
+    grade_fields = {"gradeBand": form.grade_band} if form.grade_band is not None else {}
     return DiagnosticStatus(
         status=diagnostic["status"], formId=form.id, totalQuestions=len(form.questions),
         completedQuestions=len(answers), nextQuestionId=pending.display.id if pending else None,
+        **grade_fields,
     )
 
 
 def start(
-    state: MemoryStore, user: Record, class_id: str, provider: FormProvider
+    state: MemoryStore,
+    user: Record,
+    request: DiagnosticStart,
+    provider: FormProvider,
+    assessment_forms: Mapping[GradeBand, DiagnosticForm],
 ) -> DiagnosticStatus:
-    membership(state, user, class_id, "student")
+    membership(state, user, request.classId, "student")
     diagnostic = state.diagnostics.get(user["id"])
-    if diagnostic is None:
-        form = provider.active_form()
+    replace_demo_seed = (
+        request.gradeBand is not None
+        and diagnostic is not None
+        and diagnostic.get("demoSeed", False)
+        and diagnostic["status"] == "in_progress"
+        and not diagnostic["answers"]
+    )
+    if diagnostic is None or replace_demo_seed:
+        form = (
+            assessment_forms.get(request.gradeBand)
+            if request.gradeBand is not None
+            else provider.active_form()
+        )
         if form is None:
             fail(503, "DIAGNOSTIC_FORM_UNAVAILABLE", "공개된 진단 문항집이 없습니다.")
-        diagnostic = new_diagnostic(form, class_id)
+        diagnostic = new_diagnostic(form, request.classId)
         state.diagnostics[user["id"]] = diagnostic
     return progress(diagnostic)
 
@@ -99,10 +120,20 @@ def active_diagnostic(state: MemoryStore, user: Record) -> Record:
 def next_question(diagnostic: Record) -> DiagnosticNext:
     form = diagnostic["form"]
     item = pending_question(form, diagnostic["answers"])
-    question = (
-        DiagnosticQuestion(**item.display.model_dump(), isSynthetic=form.is_synthetic)
-        if item is not None else None
-    )
+    question = None
+    if item is not None:
+        display = item.display.model_dump(exclude_unset=True)
+        if form.grade_band is not None:
+            section = [
+                candidate.display for candidate in form.questions
+                if candidate.display.skill == item.display.skill
+            ]
+            display.update(
+                maxPoints=float(item.max_points),
+                sectionNumber=sum(candidate.sequence <= item.display.sequence for candidate in section),
+                sectionTotal=len(section),
+            )
+        question = DiagnosticQuestion(**display, isSynthetic=form.is_synthetic)
     return DiagnosticNext(progress=progress(diagnostic), question=question)
 
 

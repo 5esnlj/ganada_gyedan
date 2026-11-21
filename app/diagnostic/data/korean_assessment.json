@@ -1,0 +1,2168 @@
+{
+  "g34": {
+    "listening": [
+      {
+        "area": "daily",
+        "tier": "beginner",
+        "points": 4,
+        "correctOptionId": "2",
+        "prompt": "들려주는 낱말을 바르게 적은 것은 무엇입니까?",
+        "audioUrl": "/diagnostic-assets/g34/daily/listening/q01.mp3",
+        "options": [
+          {
+            "id": "1",
+            "text": "팔"
+          },
+          {
+            "id": "2",
+            "text": "발"
+          },
+          {
+            "id": "3",
+            "text": "말"
+          },
+          {
+            "id": "4",
+            "text": "달"
+          }
+        ]
+      },
+      {
+        "area": "math",
+        "tier": "beginner",
+        "points": 4,
+        "correctOptionId": "4",
+        "prompt": "들려주는 말에 맞는 그림은 무엇입니까?",
+        "audioUrl": "/diagnostic-assets/g34/math/listening/q02.mp3",
+        "options": [
+          {
+            "id": "1",
+            "text": "1번 그림",
+            "imageUrl": "/diagnostic-assets/g34/math/listening/q02-option-1.png"
+          },
+          {
+            "id": "2",
+            "text": "2번 그림",
+            "imageUrl": "/diagnostic-assets/g34/math/listening/q02-option-2.png"
+          },
+          {
+            "id": "3",
+            "text": "3번 그림",
+            "imageUrl": "/diagnostic-assets/g34/math/listening/q02-option-3.png"
+          },
+          {
+            "id": "4",
+            "text": "4번 그림",
+            "imageUrl": "/diagnostic-assets/g34/math/listening/q02-option-4.png"
+          }
+        ]
+      },
+      {
+        "area": "daily",
+        "tier": "beginner",
+        "points": 6,
+        "correctOptionId": "1",
+        "prompt": "들려주는 말들과 가장 관련 있는 곳은 어디입니까?",
+        "audioUrl": "/diagnostic-assets/g34/daily/listening/q03.mp3",
+        "options": [
+          {
+            "id": "1",
+            "text": "도서관"
+          },
+          {
+            "id": "2",
+            "text": "식당"
+          },
+          {
+            "id": "3",
+            "text": "우체국"
+          },
+          {
+            "id": "4",
+            "text": "병원"
+          }
+        ]
+      },
+      {
+        "area": "daily",
+        "tier": "beginner",
+        "points": 4,
+        "correctOptionId": "3",
+        "prompt": "나는 친구에게 무슨 말을 해야 할까요?",
+        "audioUrl": "/diagnostic-assets/g34/daily/listening/q04.mp3",
+        "options": [
+          {
+            "id": "1",
+            "text": "잘 가."
+          },
+          {
+            "id": "2",
+            "text": "미안해."
+          },
+          {
+            "id": "3",
+            "text": "고마워."
+          },
+          {
+            "id": "4",
+            "text": "축하해."
+          }
+        ]
+      },
+      {
+        "area": "social",
+        "tier": "beginner",
+        "points": 4,
+        "correctOptionId": "2",
+        "prompt": "우리 고장 지도에서 동그라미가 있는 곳의 위치는 어디입니까?",
+        "audioUrl": "/diagnostic-assets/g34/social/listening/q05.mp3",
+        "imageUrl": "/diagnostic-assets/g34/social/listening/q05.png",
+        "options": [
+          {
+            "id": "1",
+            "text": "1번"
+          },
+          {
+            "id": "2",
+            "text": "2번"
+          },
+          {
+            "id": "3",
+            "text": "3번"
+          },
+          {
+            "id": "4",
+            "text": "4번"
+          }
+        ]
+      },
+      {
+        "area": "korean",
+        "tier": "beginner",
+        "points": 6,
+        "correctOptionId": "1",
+        "prompt": "대화에서 알 수 있는 것은 무엇입니까?",
+        "audioUrl": "/diagnostic-assets/g34/korean/listening/q06.mp3",
+        "options": [
+          {
+            "id": "1",
+            "text": "두 사람은 수업이 끝나고 도서관에 갈 것이다."
+          },
+          {
+            "id": "2",
+            "text": "수업은 세 시에 끝난다."
+          },
+          {
+            "id": "3",
+            "text": "남자는 도서관에 가기 싫어한다."
+          },
+          {
+            "id": "4",
+            "text": "두 사람은 지금 도서관에 있다."
+          }
+        ]
+      },
+      {
+        "area": "science",
+        "tier": "beginner",
+        "points": 6,
+        "correctOptionId": "3",
+        "prompt": "선생님의 말씀에 맞는 그림은 무엇입니까?",
+        "audioUrl": "/diagnostic-assets/g34/science/listening/q07.mp3",
+        "options": [
+          {
+            "id": "1",
+            "text": "1번 그림",
+            "imageUrl": "/diagnostic-assets/g34/science/listening/q07-option-1.png"
+          },
+          {
+            "id": "2",
+            "text": "2번 그림",
+            "imageUrl": "/diagnostic-assets/g34/science/listening/q07-option-2.png"
+          },
+          {
+            "id": "3",
+            "text": "3번 그림",
+            "imageUrl": "/diagnostic-assets/g34/science/listening/q07-option-3.png"
+          },
+          {
+            "id": "4",
+            "text": "4번 그림",
+            "imageUrl": "/diagnostic-assets/g34/science/listening/q07-option-4.png"
+          }
+        ]
+      },
+      {
+        "area": "daily",
+        "tier": "beginner",
+        "points": 8,
+        "correctOptionId": "4",
+        "prompt": "두 사람이 이야기하는 곳은 어디입니까?",
+        "audioUrl": "/diagnostic-assets/g34/daily/listening/q08.mp3",
+        "options": [
+          {
+            "id": "1",
+            "text": "식당"
+          },
+          {
+            "id": "2",
+            "text": "병원"
+          },
+          {
+            "id": "3",
+            "text": "도서관"
+          },
+          {
+            "id": "4",
+            "text": "문구점"
+          }
+        ]
+      },
+      {
+        "area": "korean",
+        "tier": "intermediate",
+        "points": 6,
+        "correctOptionId": "2",
+        "prompt": "민지가 준호에게 전화를 한 까닭은 무엇입니까?",
+        "audioUrl": "/diagnostic-assets/g34/korean/listening/q09.mp3",
+        "options": [
+          {
+            "id": "1",
+            "text": "준호에게 휴대전화를 빌리고 싶어서."
+          },
+          {
+            "id": "2",
+            "text": "사진에 대한 준호의 생각을 듣고 싶어서."
+          },
+          {
+            "id": "3",
+            "text": "내일 만날 장소를 정하려고."
+          },
+          {
+            "id": "4",
+            "text": "숙제를 물어보려고."
+          }
+        ]
+      },
+      {
+        "area": "science",
+        "tier": "intermediate",
+        "points": 10,
+        "correctOptionId": "1",
+        "prompt": "다음은 무엇에 관한 설명입니까?",
+        "audioUrl": "/diagnostic-assets/g34/science/listening/q10.mp3",
+        "options": [
+          {
+            "id": "1",
+            "text": "배추흰나비"
+          },
+          {
+            "id": "2",
+            "text": "개구리"
+          },
+          {
+            "id": "3",
+            "text": "물고기"
+          },
+          {
+            "id": "4",
+            "text": "토끼"
+          }
+        ]
+      },
+      {
+        "area": "social",
+        "tier": "intermediate",
+        "points": 10,
+        "correctOptionId": "4",
+        "prompt": "다음 설명에서 가장 중요한 말은 무엇입니까?",
+        "audioUrl": "/diagnostic-assets/g34/social/listening/q11.mp3",
+        "options": [
+          {
+            "id": "1",
+            "text": "명절"
+          },
+          {
+            "id": "2",
+            "text": "결혼식"
+          },
+          {
+            "id": "3",
+            "text": "저고리"
+          },
+          {
+            "id": "4",
+            "text": "한복"
+          }
+        ]
+      },
+      {
+        "area": "math",
+        "tier": "intermediate",
+        "points": 8,
+        "correctOptionId": "3",
+        "prompt": "남자의 말 다음에 여자가 할 말은 무엇입니까?",
+        "audioUrl": "/diagnostic-assets/g34/math/listening/q12.mp3",
+        "options": [
+          {
+            "id": "1",
+            "text": "저울 위에 올려 놓으면 돼."
+          },
+          {
+            "id": "2",
+            "text": "리터로 재면 돼."
+          },
+          {
+            "id": "3",
+            "text": "먼저 눈금 영에 막대의 끝을 놓아 봐."
+          },
+          {
+            "id": "4",
+            "text": "각도기를 막대 위에 놓아 봐."
+          }
+        ]
+      },
+      {
+        "area": "science",
+        "tier": "advanced",
+        "points": 10,
+        "correctOptionId": "1",
+        "prompt": "식물이 잘 자라지 못한 이유가 아닌 것은 무엇입니까?",
+        "promptSpans": [
+          {
+            "text": "식물이 잘 자라지 못한 이유가 ",
+            "style": "plain"
+          },
+          {
+            "text": "아닌",
+            "style": "strong"
+          },
+          {
+            "text": " 것은 무엇입니까?",
+            "style": "plain"
+          }
+        ],
+        "audioUrl": "/diagnostic-assets/g34/science/listening/q13.mp3",
+        "options": [
+          {
+            "id": "1",
+            "text": "뿌리가 땅속에 있었다."
+          },
+          {
+            "id": "2",
+            "text": "물을 주지 않았다."
+          },
+          {
+            "id": "3",
+            "text": "햇빛을 받지 못했다."
+          },
+          {
+            "id": "4",
+            "text": "양분을 만들지 못했다."
+          }
+        ]
+      },
+      {
+        "area": "science",
+        "tier": "advanced",
+        "points": 7,
+        "correctOptionId": "2",
+        "prompt": "화석에 대해 들려준 내용과 다른 것은 무엇입니까?",
+        "promptSpans": [
+          {
+            "text": "화석에 대해 들려준 내용과 ",
+            "style": "plain"
+          },
+          {
+            "text": "다른",
+            "style": "strong"
+          },
+          {
+            "text": " 것은 무엇입니까?",
+            "style": "plain"
+          }
+        ],
+        "audioUrl": "/diagnostic-assets/g34/science/listening/q14.mp3",
+        "options": [
+          {
+            "id": "1",
+            "text": "오래전에 살았던 동물이나 식물의 흔적이다."
+          },
+          {
+            "id": "2",
+            "text": "자연사박물관에서는 화석을 볼 수 없다."
+          },
+          {
+            "id": "3",
+            "text": "공룡의 발자국도 화석이 될 수 있다."
+          },
+          {
+            "id": "4",
+            "text": "화석을 보고 옛날 동물을 알 수 있다."
+          }
+        ]
+      },
+      {
+        "area": "math",
+        "tier": "advanced",
+        "points": 7,
+        "correctOptionId": "3",
+        "prompt": "이 색종이의 둘레는 몇 센티미터입니까?",
+        "audioUrl": "/diagnostic-assets/g34/math/listening/q15.mp3",
+        "options": [
+          {
+            "id": "1",
+            "text": "4센티미터"
+          },
+          {
+            "id": "2",
+            "text": "8센티미터"
+          },
+          {
+            "id": "3",
+            "text": "12센티미터"
+          },
+          {
+            "id": "4",
+            "text": "16센티미터"
+          }
+        ]
+      }
+    ],
+    "reading": [
+      {
+        "area": "daily",
+        "tier": "beginner",
+        "points": 4,
+        "correctOptionId": "3",
+        "prompt": "그림에 맞는 글자는 무엇입니까?",
+        "imageUrl": "/diagnostic-assets/g34/daily/reading/q01.png",
+        "options": [
+          {
+            "id": "1",
+            "text": "강"
+          },
+          {
+            "id": "2",
+            "text": "감"
+          },
+          {
+            "id": "3",
+            "text": "공"
+          },
+          {
+            "id": "4",
+            "text": "곳"
+          }
+        ]
+      },
+      {
+        "area": "daily",
+        "tier": "beginner",
+        "points": 4,
+        "correctOptionId": "2",
+        "prompt": "그림에 맞는 글자는 무엇입니까?",
+        "imageUrl": "/diagnostic-assets/g34/daily/reading/q02.png",
+        "options": [
+          {
+            "id": "1",
+            "text": "지우개"
+          },
+          {
+            "id": "2",
+            "text": "연필"
+          },
+          {
+            "id": "3",
+            "text": "가위"
+          },
+          {
+            "id": "4",
+            "text": "자"
+          }
+        ]
+      },
+      {
+        "area": "daily",
+        "tier": "beginner",
+        "points": 4,
+        "correctOptionId": "1",
+        "prompt": "앞에 제시된 것과 가장 관계있는 것은 무엇입니까?",
+        "word": "교실",
+        "options": [
+          {
+            "id": "1",
+            "text": "칠판"
+          },
+          {
+            "id": "2",
+            "text": "침대"
+          },
+          {
+            "id": "3",
+            "text": "냉장고"
+          },
+          {
+            "id": "4",
+            "text": "세탁기"
+          }
+        ]
+      },
+      {
+        "area": "science",
+        "tier": "beginner",
+        "points": 4,
+        "correctOptionId": "4",
+        "prompt": "앞에 제시된 것과 가장 관계있는 것은 무엇입니까?",
+        "word": "스티로폼",
+        "options": [
+          {
+            "id": "1",
+            "text": "가라앉다"
+          },
+          {
+            "id": "2",
+            "text": "달다"
+          },
+          {
+            "id": "3",
+            "text": "짜다"
+          },
+          {
+            "id": "4",
+            "text": "뜨다"
+          }
+        ]
+      },
+      {
+        "area": "social",
+        "tier": "beginner",
+        "points": 4,
+        "correctOptionId": "3",
+        "prompt": "앞에 제시된 것과 가장 관계있는 것은 무엇입니까?",
+        "word": "고장",
+        "options": [
+          {
+            "id": "1",
+            "text": "밥을 먹는 곳."
+          },
+          {
+            "id": "2",
+            "text": "그림책을 빌리는 곳."
+          },
+          {
+            "id": "3",
+            "text": "우리가 사는 곳."
+          },
+          {
+            "id": "4",
+            "text": "운동을 하는 곳."
+          }
+        ]
+      },
+      {
+        "area": "daily",
+        "tier": "beginner",
+        "points": 4,
+        "correctOptionId": "2",
+        "prompt": "앞에 제시된 것과 가장 관계있는 것은 무엇입니까?",
+        "stimulusText": "연필을 사요.\n공책을 사요.\n지우개도 사요.",
+        "options": [
+          {
+            "id": "1",
+            "text": "병원"
+          },
+          {
+            "id": "2",
+            "text": "문구점"
+          },
+          {
+            "id": "3",
+            "text": "약국"
+          },
+          {
+            "id": "4",
+            "text": "식당"
+          }
+        ]
+      },
+      {
+        "area": "daily",
+        "tier": "beginner",
+        "points": 4,
+        "correctOptionId": "4",
+        "prompt": "그림을 바르게 설명한 것은 무엇입니까?",
+        "imageUrl": "/diagnostic-assets/g34/daily/reading/q07.png",
+        "options": [
+          {
+            "id": "1",
+            "text": "축구를 합니다."
+          },
+          {
+            "id": "2",
+            "text": "노래를 부릅니다."
+          },
+          {
+            "id": "3",
+            "text": "그림을 그립니다."
+          },
+          {
+            "id": "4",
+            "text": "그림책을 읽습니다."
+          }
+        ]
+      },
+      {
+        "area": "korean",
+        "tier": "beginner",
+        "points": 4,
+        "correctOptionId": "1",
+        "prompt": "윗글과 가장 관계있는 말은 무엇입니까?",
+        "stimulusText": "나는 오늘 수업 시간에 친구들 앞에서 말했습니다. 선생님께서 칭찬해 주셨습니다.",
+        "options": [
+          {
+            "id": "1",
+            "text": "수업"
+          },
+          {
+            "id": "2",
+            "text": "생일"
+          },
+          {
+            "id": "3",
+            "text": "시험"
+          },
+          {
+            "id": "4",
+            "text": "여행"
+          }
+        ]
+      },
+      {
+        "area": "math",
+        "tier": "beginner",
+        "points": 4,
+        "correctOptionId": "3",
+        "prompt": "앞에 제시된 것과 가장 관계있는 것은 무엇입니까?",
+        "word": "정사각형, 직사각형, 직각삼각형",
+        "options": [
+          {
+            "id": "1",
+            "text": "과일"
+          },
+          {
+            "id": "2",
+            "text": "동물"
+          },
+          {
+            "id": "3",
+            "text": "도형"
+          },
+          {
+            "id": "4",
+            "text": "음식"
+          }
+        ]
+      },
+      {
+        "area": "daily",
+        "tier": "beginner",
+        "points": 4,
+        "correctOptionId": "2",
+        "prompt": "다음 글을 바르게 설명한 것은 무엇입니까?",
+        "stimulusText": "민호야,\n이번 토요일은 내 생일이야. 오후 두 시에 우리 집에 와. 같이 케이크를 먹고 놀아. 꼭 와!\n영희가",
+        "options": [
+          {
+            "id": "1",
+            "text": "영희가 민호에게 쓴 생일 축하 편지이다."
+          },
+          {
+            "id": "2",
+            "text": "영희가 민호에게 보낸 생일 초대 쪽지이다."
+          },
+          {
+            "id": "3",
+            "text": "민호가 영희에게 보낸 초대 쪽지이다."
+          },
+          {
+            "id": "4",
+            "text": "영희는 민호에게 줄 케이크를 준비했다."
+          }
+        ]
+      },
+      {
+        "area": "science",
+        "tier": "intermediate",
+        "points": 6,
+        "correctOptionId": "4",
+        "prompt": "‘물체의 무게를 재는 순서’가 바르게 이어진 것은 무엇입니까?",
+        "stimulusText": "㉮ 저울의 숫자를 읽습니다.\n㉯ 먼저 저울의 영점을 확인합니다.\n㉰ 물체를 저울 위에 올려놓습니다.\n㉱ 무게와 날짜를 공책에 씁니다.",
+        "options": [
+          {
+            "id": "1",
+            "text": "㉯ → ㉮ → ㉰ → ㉱"
+          },
+          {
+            "id": "2",
+            "text": "㉰ → ㉯ → ㉮ → ㉱"
+          },
+          {
+            "id": "3",
+            "text": "㉰ → ㉮ → ㉯ → ㉱"
+          },
+          {
+            "id": "4",
+            "text": "㉯ → ㉰ → ㉮ → ㉱"
+          }
+        ]
+      },
+      {
+        "area": "social",
+        "tier": "intermediate",
+        "points": 6,
+        "correctOptionId": "1",
+        "prompt": "다음 글을 바르게 이해한 것은 무엇입니까?",
+        "stimulusText": "우리 가족은 일요일에 시장과 백화점에 갔다. 시장은 백화점에 비해 값이 쌌다. 그래서 어머니는 시장에서 과일을 사셨다.",
+        "options": [
+          {
+            "id": "1",
+            "text": "어머니는 시장에서 과일을 사셨다."
+          },
+          {
+            "id": "2",
+            "text": "어머니는 백화점에서 과일을 사셨다."
+          },
+          {
+            "id": "3",
+            "text": "시장은 백화점보다 값이 비쌌다."
+          },
+          {
+            "id": "4",
+            "text": "우리 가족은 토요일에 시장에 갔다."
+          }
+        ]
+      },
+      {
+        "area": "daily",
+        "tier": "intermediate",
+        "points": 6,
+        "correctOptionId": "3",
+        "prompt": "내가 친구에게 돈을 빌린 까닭은 무엇입니까?",
+        "stimulusText": "어제 학교에 가는 길에 비가 많이 왔다. 우산이 없어서 편의점에 가서 우산을 사려고 했다. 그런데 계산하려고 보니 지갑을 집에 두고 왔다. 마침 같은 반 친구를 만나서 이야기하며 돈을 빌렸다.",
+        "options": [
+          {
+            "id": "1",
+            "text": "우산이 너무 비싸서."
+          },
+          {
+            "id": "2",
+            "text": "친구가 돈이 많아서."
+          },
+          {
+            "id": "3",
+            "text": "지갑을 집에 두고 와서."
+          },
+          {
+            "id": "4",
+            "text": "편의점이 학교에서 멀어서."
+          }
+        ]
+      },
+      {
+        "area": "math",
+        "tier": "intermediate",
+        "points": 6,
+        "correctOptionId": "2",
+        "prompt": "우리 반 친구들이 좋아하는 과일에 대해 조사하여 그림그래프로 나타냈습니다. (● 한 개는 1명입니다.) 그림그래프를 바르게 이해한 것은 무엇입니까?",
+        "stimulusTable": {
+          "headers": [
+            "과일",
+            "학생 수"
+          ],
+          "rows": [
+            [
+              "사과",
+              "●●●●●●●●"
+            ],
+            [
+              "딸기",
+              "●●●●"
+            ],
+            [
+              "포도",
+              "●●●●●●"
+            ],
+            [
+              "바나나",
+              "●●●"
+            ]
+          ]
+        },
+        "options": [
+          {
+            "id": "1",
+            "text": "딸기를 좋아하는 학생은 포도에 비해 많다."
+          },
+          {
+            "id": "2",
+            "text": "사과를 좋아하는 학생이 가장 많다."
+          },
+          {
+            "id": "3",
+            "text": "바나나를 좋아하는 학생은 4명이다."
+          },
+          {
+            "id": "4",
+            "text": "포도를 좋아하는 학생은 사과보다 많다."
+          }
+        ]
+      },
+      {
+        "area": "korean",
+        "tier": "intermediate",
+        "points": 6,
+        "correctOptionId": "1",
+        "prompt": "윗글의 중심 이야기는 무엇입니까?",
+        "stimulusText": "나는 휴대전화로 가족 사진을 찍었다. 사진 속 동생의 표정이 아주 재미있었다. 사진을 보며 가족과 함께 웃었다. 나는 사진에 대해 느낌을 그림으로 그려 보았다.",
+        "options": [
+          {
+            "id": "1",
+            "text": "가족 사진을 찍고 느낌을 나눈 일"
+          },
+          {
+            "id": "2",
+            "text": "동생과 다투었던 일"
+          },
+          {
+            "id": "3",
+            "text": "휴대전화를 새로 산 일"
+          },
+          {
+            "id": "4",
+            "text": "그림 대회에서 상을 받은 일"
+          }
+        ]
+      },
+      {
+        "area": "korean",
+        "tier": "advanced",
+        "points": 6,
+        "correctOptionId": "4",
+        "prompt": "윗글에서 밑줄 친 ㉮~㉱ 중 가리키는 것이 다른 하나는 무엇입니까?",
+        "promptSpans": [
+          {
+            "text": "윗글에서 밑줄 친 ㉮~㉱ 중 가리키는 것이 ",
+            "style": "plain"
+          },
+          {
+            "text": "다른",
+            "style": "strong"
+          },
+          {
+            "text": " 하나는 무엇입니까?",
+            "style": "plain"
+          }
+        ],
+        "stimulusText": "독서 시간에 나는 동화책을 한 권 읽었다. 이 책의 ㉮등장인물은 남자아이이다. ㉯그 아이는 용감하며 마음이 따뜻하다. 나는 독서가 끝난 뒤 ㉰그 아이에 대해 감상문을 썼다. 선생님께서는 ㉱그 글을 칭찬해 주셨다.",
+        "stimulusSpans": [
+          {
+            "text": "독서 시간에 나는 동화책을 한 권 읽었다. 이 책의 ",
+            "style": "plain"
+          },
+          {
+            "text": "㉮등장인물",
+            "style": "underline"
+          },
+          {
+            "text": "은 남자아이이다. ",
+            "style": "plain"
+          },
+          {
+            "text": "㉯그 아이",
+            "style": "underline"
+          },
+          {
+            "text": "는 용감하며 마음이 따뜻하다. 나는 독서가 끝난 뒤 ",
+            "style": "plain"
+          },
+          {
+            "text": "㉰그 아이",
+            "style": "underline"
+          },
+          {
+            "text": "에 대해 감상문을 썼다. 선생님께서는 ",
+            "style": "plain"
+          },
+          {
+            "text": "㉱그 글",
+            "style": "underline"
+          },
+          {
+            "text": "을 칭찬해 주셨다.",
+            "style": "plain"
+          }
+        ],
+        "options": [
+          {
+            "id": "1",
+            "text": "㉮"
+          },
+          {
+            "id": "2",
+            "text": "㉯"
+          },
+          {
+            "id": "3",
+            "text": "㉰"
+          },
+          {
+            "id": "4",
+            "text": "㉱"
+          }
+        ]
+      },
+      {
+        "area": "social",
+        "tier": "advanced",
+        "points": 6,
+        "correctOptionId": "3",
+        "prompt": "위 포스터의 목적은 무엇입니까?",
+        "stimulusText": "우리 마을 어린이 선거\n• 일시: 5월 10일(금) 오후 2시\n• 장소: 학교 운동장\n• 내용: 어린이 회장을 뽑는 투표\n• 투표에 참여한 학생에게는 선물을 드립니다.\n우리 마을의 주인은 바로 여러분입니다. 다 함께 투표합시다!",
+        "stimulusSpans": [
+          {
+            "text": "우리 마을 어린이 선거",
+            "style": "strong"
+          },
+          {
+            "text": "\n• 일시: 5월 10일(금) 오후 2시\n• 장소: 학교 운동장\n• 내용: 어린이 회장을 뽑는 투표\n• 투표에 참여한 학생에게는 선물을 드립니다.\n우리 마을의 주인은 바로 여러분입니다. 다 함께 투표합시다!",
+            "style": "plain"
+          }
+        ],
+        "options": [
+          {
+            "id": "1",
+            "text": "학교 급식 메뉴를 안내한다."
+          },
+          {
+            "id": "2",
+            "text": "그림 대회 결과를 발표한다."
+          },
+          {
+            "id": "3",
+            "text": "투표에 참여하도록 권유한다."
+          },
+          {
+            "id": "4",
+            "text": "학급 회의 결과를 알린다."
+          }
+        ]
+      },
+      {
+        "area": "social",
+        "tier": "advanced",
+        "points": 6,
+        "correctOptionId": "2",
+        "prompt": "위 포스터에 대해 알 수 있는 것은 무엇입니까?",
+        "stimulusText": "우리 마을 어린이 선거\n• 일시: 5월 10일(금) 오후 2시\n• 장소: 학교 운동장\n• 내용: 어린이 회장을 뽑는 투표\n• 투표에 참여한 학생에게는 선물을 드립니다.\n우리 마을의 주인은 바로 여러분입니다. 다 함께 투표합시다!",
+        "stimulusSpans": [
+          {
+            "text": "우리 마을 어린이 선거",
+            "style": "strong"
+          },
+          {
+            "text": "\n• 일시: 5월 10일(금) 오후 2시\n• 장소: 학교 운동장\n• 내용: 어린이 회장을 뽑는 투표\n• 투표에 참여한 학생에게는 선물을 드립니다.\n우리 마을의 주인은 바로 여러분입니다. 다 함께 투표합시다!",
+            "style": "plain"
+          }
+        ],
+        "options": [
+          {
+            "id": "1",
+            "text": "투표한 학생의 이름"
+          },
+          {
+            "id": "2",
+            "text": "선거가 열리는 장소"
+          },
+          {
+            "id": "3",
+            "text": "지난해 투표한 학생 수"
+          },
+          {
+            "id": "4",
+            "text": "선거의 결과"
+          }
+        ]
+      },
+      {
+        "area": "korean",
+        "tier": "advanced",
+        "points": 6,
+        "correctOptionId": "1",
+        "prompt": "윗글에서 밑줄 친 ㉮~㉱ 중 중심 문장은 무엇입니까?",
+        "stimulusText": "㉮운동은 우리 몸을 건강하게 한다. ㉯규칙적으로 운동하면 뼈와 근육이 강해진다. ㉰운동을 할수록 기분이 좋아지고 잠도 잘 잔다. ㉱또 운동을 하면 쌓였던 피로가 풀린다.",
+        "stimulusSpans": [
+          {
+            "text": "㉮운동은 우리 몸을 건강하게 한다.",
+            "style": "underline"
+          },
+          {
+            "text": " ",
+            "style": "plain"
+          },
+          {
+            "text": "㉯규칙적으로 운동하면 뼈와 근육이 강해진다.",
+            "style": "underline"
+          },
+          {
+            "text": " ",
+            "style": "plain"
+          },
+          {
+            "text": "㉰운동을 할수록 기분이 좋아지고 잠도 잘 잔다.",
+            "style": "underline"
+          },
+          {
+            "text": " ",
+            "style": "plain"
+          },
+          {
+            "text": "㉱또 운동을 하면 쌓였던 피로가 풀린다.",
+            "style": "underline"
+          }
+        ],
+        "options": [
+          {
+            "id": "1",
+            "text": "㉮"
+          },
+          {
+            "id": "2",
+            "text": "㉯"
+          },
+          {
+            "id": "3",
+            "text": "㉰"
+          },
+          {
+            "id": "4",
+            "text": "㉱"
+          }
+        ]
+      },
+      {
+        "area": "math",
+        "tier": "advanced",
+        "points": 6,
+        "correctOptionId": "4",
+        "prompt": "윗글에서 알 수 있는 것은 무엇입니까?",
+        "stimulusText": "평행사변형은 마주 보는 두 쌍의 변이 서로 평행한 사각형이다. 평행사변형은 마주 보는 변의 길이가 같으므로 둘레를 구할 때에는 두 변의 길이만 알면 된다.",
+        "options": [
+          {
+            "id": "1",
+            "text": "평행사변형은 네 변의 길이가 모두 다르다."
+          },
+          {
+            "id": "2",
+            "text": "평행사변형은 마주 보는 변이 서로 만난다."
+          },
+          {
+            "id": "3",
+            "text": "평행사변형은 각이 모두 직각이다."
+          },
+          {
+            "id": "4",
+            "text": "평행사변형은 마주 보는 변의 길이가 같다."
+          }
+        ]
+      }
+    ]
+  },
+  "g56": {
+    "listening": [
+      {
+        "area": "daily",
+        "tier": "beginner",
+        "points": 4,
+        "correctOptionId": "4",
+        "prompt": "들려주는 낱말을 바르게 적은 것은 무엇입니까?",
+        "audioUrl": "/diagnostic-assets/g56/daily/listening/q01.mp3",
+        "options": [
+          {
+            "id": "1",
+            "text": "사람"
+          },
+          {
+            "id": "2",
+            "text": "사탕"
+          },
+          {
+            "id": "3",
+            "text": "사다"
+          },
+          {
+            "id": "4",
+            "text": "사랑"
+          }
+        ]
+      },
+      {
+        "area": "math",
+        "tier": "beginner",
+        "points": 4,
+        "correctOptionId": "1",
+        "prompt": "들려주는 말에 맞는 그림은 무엇입니까?",
+        "audioUrl": "/diagnostic-assets/g56/math/listening/q02.mp3",
+        "options": [
+          {
+            "id": "1",
+            "text": "1번 그림",
+            "imageUrl": "/diagnostic-assets/g56/math/listening/q02-option-1.png"
+          },
+          {
+            "id": "2",
+            "text": "2번 그림",
+            "imageUrl": "/diagnostic-assets/g56/math/listening/q02-option-2.png"
+          },
+          {
+            "id": "3",
+            "text": "3번 그림",
+            "imageUrl": "/diagnostic-assets/g56/math/listening/q02-option-3.png"
+          },
+          {
+            "id": "4",
+            "text": "4번 그림",
+            "imageUrl": "/diagnostic-assets/g56/math/listening/q02-option-4.png"
+          }
+        ]
+      },
+      {
+        "area": "daily",
+        "tier": "beginner",
+        "points": 6,
+        "correctOptionId": "3",
+        "prompt": "들려주는 말들과 가장 관련 있는 곳은 어디입니까?",
+        "audioUrl": "/diagnostic-assets/g56/daily/listening/q03.mp3",
+        "options": [
+          {
+            "id": "1",
+            "text": "약국"
+          },
+          {
+            "id": "2",
+            "text": "서점"
+          },
+          {
+            "id": "3",
+            "text": "빵집"
+          },
+          {
+            "id": "4",
+            "text": "극장"
+          }
+        ]
+      },
+      {
+        "area": "daily",
+        "tier": "beginner",
+        "points": 4,
+        "correctOptionId": "2",
+        "prompt": "나는 친구에게 무슨 말을 해야 할까요?",
+        "audioUrl": "/diagnostic-assets/g56/daily/listening/q04.mp3",
+        "options": [
+          {
+            "id": "1",
+            "text": "연필을 잃어버렸어."
+          },
+          {
+            "id": "2",
+            "text": "연필을 빌려 줄래?"
+          },
+          {
+            "id": "3",
+            "text": "연필이 비싸네."
+          },
+          {
+            "id": "4",
+            "text": "연필을 버리지 마."
+          }
+        ]
+      },
+      {
+        "area": "social",
+        "tier": "beginner",
+        "points": 4,
+        "correctOptionId": "4",
+        "prompt": "들려주는 말들과 가장 관련 있는 대륙은 어디입니까?",
+        "audioUrl": "/diagnostic-assets/g56/social/listening/q05.mp3",
+        "options": [
+          {
+            "id": "1",
+            "text": "아프리카"
+          },
+          {
+            "id": "2",
+            "text": "유럽"
+          },
+          {
+            "id": "3",
+            "text": "오세아니아"
+          },
+          {
+            "id": "4",
+            "text": "아시아"
+          }
+        ]
+      },
+      {
+        "area": "korean",
+        "tier": "beginner",
+        "points": 6,
+        "correctOptionId": "3",
+        "prompt": "대화에서 알 수 있는 것은 무엇입니까?",
+        "audioUrl": "/diagnostic-assets/g56/korean/listening/q06.mp3",
+        "options": [
+          {
+            "id": "1",
+            "text": "여자는 내일 발표를 한다."
+          },
+          {
+            "id": "2",
+            "text": "남자는 사진을 찍으러 간다."
+          },
+          {
+            "id": "3",
+            "text": "남자는 내일 가족 사진을 보여 주고 발표할 것이다."
+          },
+          {
+            "id": "4",
+            "text": "수업은 이미 끝났다."
+          }
+        ]
+      },
+      {
+        "area": "science",
+        "tier": "beginner",
+        "points": 6,
+        "correctOptionId": "1",
+        "prompt": "선생님의 말씀에 맞는 그림은 무엇입니까?",
+        "audioUrl": "/diagnostic-assets/g56/science/listening/q07.mp3",
+        "options": [
+          {
+            "id": "1",
+            "text": "1번 그림",
+            "imageUrl": "/diagnostic-assets/g56/science/listening/q07-option-1.png"
+          },
+          {
+            "id": "2",
+            "text": "2번 그림",
+            "imageUrl": "/diagnostic-assets/g56/science/listening/q07-option-2.png"
+          },
+          {
+            "id": "3",
+            "text": "3번 그림",
+            "imageUrl": "/diagnostic-assets/g56/science/listening/q07-option-3.png"
+          },
+          {
+            "id": "4",
+            "text": "4번 그림",
+            "imageUrl": "/diagnostic-assets/g56/science/listening/q07-option-4.png"
+          }
+        ]
+      },
+      {
+        "area": "daily",
+        "tier": "beginner",
+        "points": 8,
+        "correctOptionId": "2",
+        "prompt": "두 사람이 이야기하는 곳은 어디입니까?",
+        "audioUrl": "/diagnostic-assets/g56/daily/listening/q08.mp3",
+        "options": [
+          {
+            "id": "1",
+            "text": "우체국"
+          },
+          {
+            "id": "2",
+            "text": "도서관"
+          },
+          {
+            "id": "3",
+            "text": "서점"
+          },
+          {
+            "id": "4",
+            "text": "식당"
+          }
+        ]
+      },
+      {
+        "area": "korean",
+        "tier": "intermediate",
+        "points": 6,
+        "correctOptionId": "3",
+        "prompt": "민지가 준호에게 전화를 한 까닭은 무엇입니까?",
+        "audioUrl": "/diagnostic-assets/g56/korean/listening/q09.mp3",
+        "options": [
+          {
+            "id": "1",
+            "text": "준호에게 숙제를 물어보려고."
+          },
+          {
+            "id": "2",
+            "text": "내일 만날 시간을 정하려고."
+          },
+          {
+            "id": "3",
+            "text": "뉴스 내용에 대해 이야기하고 사진을 공유하려고."
+          },
+          {
+            "id": "4",
+            "text": "인터넷 사용법을 가르쳐 주려고."
+          }
+        ]
+      },
+      {
+        "area": "science",
+        "tier": "intermediate",
+        "points": 10,
+        "correctOptionId": "4",
+        "prompt": "다음은 무엇에 관한 설명입니까?",
+        "audioUrl": "/diagnostic-assets/g56/science/listening/q10.mp3",
+        "options": [
+          {
+            "id": "1",
+            "text": "호흡"
+          },
+          {
+            "id": "2",
+            "text": "소화"
+          },
+          {
+            "id": "3",
+            "text": "배설"
+          },
+          {
+            "id": "4",
+            "text": "광합성"
+          }
+        ]
+      },
+      {
+        "area": "social",
+        "tier": "intermediate",
+        "points": 10,
+        "correctOptionId": "2",
+        "prompt": "다음 설명에서 가장 중요한 말은 무엇입니까?",
+        "audioUrl": "/diagnostic-assets/g56/social/listening/q11.mp3",
+        "options": [
+          {
+            "id": "1",
+            "text": "한자"
+          },
+          {
+            "id": "2",
+            "text": "훈민정음"
+          },
+          {
+            "id": "3",
+            "text": "백성"
+          },
+          {
+            "id": "4",
+            "text": "중국"
+          }
+        ]
+      },
+      {
+        "area": "math",
+        "tier": "intermediate",
+        "points": 8,
+        "correctOptionId": "1",
+        "prompt": "남자의 말 다음에 여자가 할 말은 무엇입니까?",
+        "audioUrl": "/diagnostic-assets/g56/math/listening/q12.mp3",
+        "options": [
+          {
+            "id": "1",
+            "text": "점수를 모두 더한 다음에 시험 횟수로 나누면 돼."
+          },
+          {
+            "id": "2",
+            "text": "점수를 모두 곱하면 돼."
+          },
+          {
+            "id": "3",
+            "text": "가장 높은 점수를 쓰면 돼."
+          },
+          {
+            "id": "4",
+            "text": "점수를 모두 빼면 돼."
+          }
+        ]
+      },
+      {
+        "area": "science",
+        "tier": "advanced",
+        "points": 10,
+        "correctOptionId": "4",
+        "prompt": "전구가 켜지지 않은 이유가 아닌 것은 무엇입니까?",
+        "promptSpans": [
+          {
+            "text": "전구가 켜지지 않은 이유가 ",
+            "style": "plain"
+          },
+          {
+            "text": "아닌",
+            "style": "strong"
+          },
+          {
+            "text": " 것은 무엇입니까?",
+            "style": "plain"
+          }
+        ],
+        "audioUrl": "/diagnostic-assets/g56/science/listening/q13.mp3",
+        "options": [
+          {
+            "id": "1",
+            "text": "전선이 끊어졌다."
+          },
+          {
+            "id": "2",
+            "text": "전지가 없다."
+          },
+          {
+            "id": "3",
+            "text": "전기회로에 전류가 통하지 않는다."
+          },
+          {
+            "id": "4",
+            "text": "전구의 크기가 크다."
+          }
+        ]
+      },
+      {
+        "area": "science",
+        "tier": "advanced",
+        "points": 7,
+        "correctOptionId": "2",
+        "prompt": "지구에 대해 들려준 내용과 다른 것은 무엇입니까?",
+        "promptSpans": [
+          {
+            "text": "지구에 대해 들려준 내용과 ",
+            "style": "plain"
+          },
+          {
+            "text": "다른",
+            "style": "strong"
+          },
+          {
+            "text": " 것은 무엇입니까?",
+            "style": "plain"
+          }
+        ],
+        "audioUrl": "/diagnostic-assets/g56/science/listening/q14.mp3",
+        "options": [
+          {
+            "id": "1",
+            "text": "지구는 스스로 도는데 이것을 자전이라고 한다."
+          },
+          {
+            "id": "2",
+            "text": "공전은 하루에 한 바퀴 도는 것이다."
+          },
+          {
+            "id": "3",
+            "text": "지구는 태양 주위를 돈다."
+          },
+          {
+            "id": "4",
+            "text": "자전 때문에 낮과 밤이 생긴다."
+          }
+        ]
+      },
+      {
+        "area": "math",
+        "tier": "advanced",
+        "points": 7,
+        "correctOptionId": "3",
+        "prompt": "파란 공이 나올 확률은 얼마입니까?",
+        "audioUrl": "/diagnostic-assets/g56/math/listening/q15.mp3",
+        "options": [
+          {
+            "id": "1",
+            "text": "오분의 이"
+          },
+          {
+            "id": "2",
+            "text": "삼분의 이"
+          },
+          {
+            "id": "3",
+            "text": "오분의 삼"
+          },
+          {
+            "id": "4",
+            "text": "이분의 삼"
+          }
+        ]
+      }
+    ],
+    "reading": [
+      {
+        "area": "daily",
+        "tier": "beginner",
+        "points": 4,
+        "correctOptionId": "3",
+        "prompt": "그림에 맞는 글자는 무엇입니까?",
+        "imageUrl": "/diagnostic-assets/g56/daily/reading/q01.png",
+        "options": [
+          {
+            "id": "1",
+            "text": "가위"
+          },
+          {
+            "id": "2",
+            "text": "가게"
+          },
+          {
+            "id": "3",
+            "text": "가방"
+          },
+          {
+            "id": "4",
+            "text": "가수"
+          }
+        ]
+      },
+      {
+        "area": "daily",
+        "tier": "beginner",
+        "points": 4,
+        "correctOptionId": "1",
+        "prompt": "그림에 맞는 글자는 무엇입니까?",
+        "imageUrl": "/diagnostic-assets/g56/daily/reading/q02.png",
+        "options": [
+          {
+            "id": "1",
+            "text": "우산"
+          },
+          {
+            "id": "2",
+            "text": "가방"
+          },
+          {
+            "id": "3",
+            "text": "모자"
+          },
+          {
+            "id": "4",
+            "text": "신발"
+          }
+        ]
+      },
+      {
+        "area": "daily",
+        "tier": "beginner",
+        "points": 4,
+        "correctOptionId": "4",
+        "prompt": "앞에 제시된 것과 가장 관계있는 것은 무엇입니까?",
+        "word": "급식실",
+        "options": [
+          {
+            "id": "1",
+            "text": "약"
+          },
+          {
+            "id": "2",
+            "text": "그림책"
+          },
+          {
+            "id": "3",
+            "text": "공"
+          },
+          {
+            "id": "4",
+            "text": "밥"
+          }
+        ]
+      },
+      {
+        "area": "science",
+        "tier": "beginner",
+        "points": 4,
+        "correctOptionId": "2",
+        "prompt": "앞에 제시된 것과 가장 관계있는 것은 무엇입니까?",
+        "word": "바람",
+        "options": [
+          {
+            "id": "1",
+            "text": "맵다"
+          },
+          {
+            "id": "2",
+            "text": "차갑다"
+          },
+          {
+            "id": "3",
+            "text": "짜다"
+          },
+          {
+            "id": "4",
+            "text": "쓰다"
+          }
+        ]
+      },
+      {
+        "area": "social",
+        "tier": "beginner",
+        "points": 4,
+        "correctOptionId": "3",
+        "prompt": "앞에 제시된 것과 가장 관계있는 것은 무엇입니까?",
+        "word": "대륙",
+        "options": [
+          {
+            "id": "1",
+            "text": "밥을 먹는 곳."
+          },
+          {
+            "id": "2",
+            "text": "그림책을 빌리는 곳."
+          },
+          {
+            "id": "3",
+            "text": "아주 넓고 큰 땅."
+          },
+          {
+            "id": "4",
+            "text": "운동을 하는 곳."
+          }
+        ]
+      },
+      {
+        "area": "daily",
+        "tier": "beginner",
+        "points": 4,
+        "correctOptionId": "1",
+        "prompt": "앞에 제시된 것과 가장 관계있는 것은 무엇입니까?",
+        "stimulusText": "음식을 주문해요.\n맛있게 먹어요.\n돈을 내고 나가요.",
+        "options": [
+          {
+            "id": "1",
+            "text": "식당"
+          },
+          {
+            "id": "2",
+            "text": "학교"
+          },
+          {
+            "id": "3",
+            "text": "서점"
+          },
+          {
+            "id": "4",
+            "text": "문구점"
+          }
+        ]
+      },
+      {
+        "area": "daily",
+        "tier": "beginner",
+        "points": 4,
+        "correctOptionId": "4",
+        "prompt": "그림을 바르게 설명한 것은 무엇입니까?",
+        "imageUrl": "/diagnostic-assets/g56/daily/reading/q07.png",
+        "options": [
+          {
+            "id": "1",
+            "text": "그림책을 읽습니다."
+          },
+          {
+            "id": "2",
+            "text": "노래를 부릅니다."
+          },
+          {
+            "id": "3",
+            "text": "그림을 그립니다."
+          },
+          {
+            "id": "4",
+            "text": "줄넘기를 합니다."
+          }
+        ]
+      },
+      {
+        "area": "korean",
+        "tier": "beginner",
+        "points": 4,
+        "correctOptionId": "2",
+        "prompt": "윗글과 가장 관계있는 말은 무엇입니까?",
+        "stimulusText": "나는 사진하고 그림을 친구들에게 보여 주었습니다. 그리고 앞에서 큰 소리로 말했습니다.",
+        "options": [
+          {
+            "id": "1",
+            "text": "생일"
+          },
+          {
+            "id": "2",
+            "text": "발표"
+          },
+          {
+            "id": "3",
+            "text": "시험"
+          },
+          {
+            "id": "4",
+            "text": "여행"
+          }
+        ]
+      },
+      {
+        "area": "math",
+        "tier": "beginner",
+        "points": 4,
+        "correctOptionId": "3",
+        "prompt": "앞에 제시된 것과 가장 관계있는 것은 무엇입니까?",
+        "word": "짝수, 홀수",
+        "options": [
+          {
+            "id": "1",
+            "text": "모양"
+          },
+          {
+            "id": "2",
+            "text": "과일"
+          },
+          {
+            "id": "3",
+            "text": "수"
+          },
+          {
+            "id": "4",
+            "text": "동물"
+          }
+        ]
+      },
+      {
+        "area": "daily",
+        "tier": "beginner",
+        "points": 4,
+        "correctOptionId": "1",
+        "prompt": "다음 글을 바르게 설명한 것은 무엇입니까?",
+        "stimulusText": "알림장\n• 내일 준비물: 색연필, 도화지, 가위\n• 숙제: 공책에 일기 쓰기",
+        "stimulusSpans": [
+          {
+            "text": "알림장",
+            "style": "strong"
+          },
+          {
+            "text": "\n• 내일 준비물: 색연필, 도화지, 가위\n• 숙제: 공책에 일기 쓰기",
+            "style": "plain"
+          }
+        ],
+        "options": [
+          {
+            "id": "1",
+            "text": "내일 준비물과 숙제를 알려 주는 글이다."
+          },
+          {
+            "id": "2",
+            "text": "친구를 생일 잔치에 초대하는 글이다."
+          },
+          {
+            "id": "3",
+            "text": "학급 규칙을 소개하는 글이다."
+          },
+          {
+            "id": "4",
+            "text": "수학 시험 날짜를 알리는 글이다."
+          }
+        ]
+      },
+      {
+        "area": "korean",
+        "tier": "intermediate",
+        "points": 6,
+        "correctOptionId": "4",
+        "prompt": "‘발표를 준비하는 순서’가 바르게 이어진 것은 무엇입니까?",
+        "stimulusText": "㉮ 마지막으로 친구들 앞에서 발표 연습을 합니다.\n㉯ 먼저 발표할 주제를 정합니다.\n㉰ 주제를 정한 다음에 필요한 자료를 조사합니다.\n㉱ 조사한 자료를 정리하며 발표할 내용을 씁니다.",
+        "options": [
+          {
+            "id": "1",
+            "text": "㉯ → ㉱ → ㉰ → ㉮"
+          },
+          {
+            "id": "2",
+            "text": "㉰ → ㉯ → ㉱ → ㉮"
+          },
+          {
+            "id": "3",
+            "text": "㉰ → ㉱ → ㉯ → ㉮"
+          },
+          {
+            "id": "4",
+            "text": "㉯ → ㉰ → ㉱ → ㉮"
+          }
+        ]
+      },
+      {
+        "area": "science",
+        "tier": "intermediate",
+        "points": 6,
+        "correctOptionId": "2",
+        "prompt": "다음 글을 바르게 이해한 것은 무엇입니까?",
+        "stimulusText": "과학 시간에 선생님께서 오늘은 물이 얼음으로 변하는 과정을 관찰한다고 하셨다. 우리는 친구들과 함께 준비물을 챙기기로 했다. 그런데 상자를 열어 보니 얼음이 이미 다 녹아 있었다. 선생님께서는 “그러면 얼음이 녹는 모습을 관찰해 봅시다.”라고 하셨다. 우리는 계획을 바꾸어 실험을 했다.",
+        "options": [
+          {
+            "id": "1",
+            "text": "학생들은 물을 얼리는 실험을 했다."
+          },
+          {
+            "id": "2",
+            "text": "실험 계획이 바뀌었다."
+          },
+          {
+            "id": "3",
+            "text": "선생님께서 얼음을 준비하지 못하셨다."
+          },
+          {
+            "id": "4",
+            "text": "친구들이 얼음을 녹여 버렸다."
+          }
+        ]
+      },
+      {
+        "area": "daily",
+        "tier": "intermediate",
+        "points": 6,
+        "correctOptionId": "3",
+        "prompt": "나는 오늘 왜 지각할 뻔했습니까?",
+        "stimulusText": "나는 오늘 아침에 지각할 뻔했다. 시계 소리를 듣지 못하고 늦게 일어났기 때문이다. 급하게 가방을 챙기고 뛰어서 겨우 교문을 통과했다. 교문 앞에서 선생님께서는 웃으시면서 지각에 대해 “오늘은 괜찮아.”라고 말씀하셨다.",
+        "options": [
+          {
+            "id": "1",
+            "text": "가방을 잃어버려서."
+          },
+          {
+            "id": "2",
+            "text": "버스를 놓쳐서."
+          },
+          {
+            "id": "3",
+            "text": "시계 소리를 듣지 못해서."
+          },
+          {
+            "id": "4",
+            "text": "선생님께 혼나서."
+          }
+        ]
+      },
+      {
+        "area": "math",
+        "tier": "intermediate",
+        "points": 6,
+        "correctOptionId": "1",
+        "prompt": "우리 반 친구들이 좋아하는 과일에 대해 조사하여 표를 만들었습니다. 표를 바르게 이해한 것은 무엇입니까?",
+        "stimulusTable": {
+          "headers": [
+            "과일",
+            "사과",
+            "딸기",
+            "포도",
+            "계"
+          ],
+          "rows": [
+            [
+              "학생 수(명)",
+              "10",
+              "6",
+              "4",
+              "20"
+            ],
+            [
+              "백분율(%)",
+              "50",
+              "30",
+              "20",
+              "100"
+            ]
+          ]
+        },
+        "options": [
+          {
+            "id": "1",
+            "text": "사과를 좋아하는 학생의 백분율이 가장 높다."
+          },
+          {
+            "id": "2",
+            "text": "딸기를 좋아하는 학생은 포도에 비해 적다."
+          },
+          {
+            "id": "3",
+            "text": "포도를 좋아하는 학생은 전체의 30%이다."
+          },
+          {
+            "id": "4",
+            "text": "사과를 좋아하는 학생은 딸기보다 적다."
+          }
+        ]
+      },
+      {
+        "area": "social",
+        "tier": "intermediate",
+        "points": 6,
+        "correctOptionId": "2",
+        "prompt": "윗글의 중심 이야기는 무엇입니까?",
+        "stimulusText": "시장에서는 같은 물건이라도 가게에 따라 가격이 다르다. 그래서 우리는 가격과 품질을 비교하여 물건을 산다.",
+        "options": [
+          {
+            "id": "1",
+            "text": "시장에서는 모든 가게의 가격이 같다."
+          },
+          {
+            "id": "2",
+            "text": "물건을 살 때 가격과 품질을 비교한다."
+          },
+          {
+            "id": "3",
+            "text": "가격보다 가게 크기가 중요하다."
+          },
+          {
+            "id": "4",
+            "text": "품질은 가격과 관계가 없다."
+          }
+        ]
+      },
+      {
+        "area": "korean",
+        "tier": "advanced",
+        "points": 6,
+        "correctOptionId": "4",
+        "prompt": "윗글에서 밑줄 친 ㉮~㉱ 중 가리키는 것이 다른 하나는 무엇입니까?",
+        "promptSpans": [
+          {
+            "text": "윗글에서 밑줄 친 ㉮~㉱ 중 가리키는 것이 ",
+            "style": "plain"
+          },
+          {
+            "text": "다른",
+            "style": "strong"
+          },
+          {
+            "text": " 하나는 무엇입니까?",
+            "style": "plain"
+          }
+        ],
+        "stimulusText": "우리 반은 국어 시간에 ㉮토의를 했다. ㉯그것은 학교 규칙을 정하기 위한 시간이었다. 나는 ㉰그 토의에서 학교 규칙에 대해 내 의견을 말했다. 선생님께서는 ㉱그 규칙을 칠판에 쓰셨다.",
+        "stimulusSpans": [
+          {
+            "text": "우리 반은 국어 시간에 ",
+            "style": "plain"
+          },
+          {
+            "text": "㉮토의",
+            "style": "underline"
+          },
+          {
+            "text": "를 했다. ",
+            "style": "plain"
+          },
+          {
+            "text": "㉯그것",
+            "style": "underline"
+          },
+          {
+            "text": "은 학교 규칙을 정하기 위한 시간이었다. 나는 ",
+            "style": "plain"
+          },
+          {
+            "text": "㉰그 토의",
+            "style": "underline"
+          },
+          {
+            "text": "에서 학교 규칙에 대해 내 의견을 말했다. 선생님께서는 ",
+            "style": "plain"
+          },
+          {
+            "text": "㉱그 규칙",
+            "style": "underline"
+          },
+          {
+            "text": "을 칠판에 쓰셨다.",
+            "style": "plain"
+          }
+        ],
+        "options": [
+          {
+            "id": "1",
+            "text": "㉮"
+          },
+          {
+            "id": "2",
+            "text": "㉯"
+          },
+          {
+            "id": "3",
+            "text": "㉰"
+          },
+          {
+            "id": "4",
+            "text": "㉱"
+          }
+        ]
+      },
+      {
+        "area": "social",
+        "tier": "advanced",
+        "points": 6,
+        "correctOptionId": "3",
+        "prompt": "위 포스터의 목적은 무엇입니까?",
+        "stimulusText": "일회용품 줄이기 캠페인\n• 일시: 6월 5일(수) 오전 9시\n• 장소: 학교 운동장\n• 내용: 일회용 컵 대신 내 컵 쓰기 약속, 일회용품 없는 하루 체험\n• 참여하는 학생에게는 선물을 드립니다.\n지구를 지키는 작은 실천에 함께합시다!",
+        "stimulusSpans": [
+          {
+            "text": "일회용품 줄이기 캠페인",
+            "style": "strong"
+          },
+          {
+            "text": "\n• 일시: 6월 5일(수) 오전 9시\n• 장소: 학교 운동장\n• 내용: 일회용 컵 대신 내 컵 쓰기 약속, 일회용품 없는 하루 체험\n• 참여하는 학생에게는 선물을 드립니다.\n지구를 지키는 작은 실천에 함께합시다!",
+            "style": "plain"
+          }
+        ],
+        "options": [
+          {
+            "id": "1",
+            "text": "학교 급식 메뉴를 안내한다."
+          },
+          {
+            "id": "2",
+            "text": "그림 대회 결과를 발표한다."
+          },
+          {
+            "id": "3",
+            "text": "환경 보호 활동에 참여하도록 권유한다."
+          },
+          {
+            "id": "4",
+            "text": "학급 회의 결과를 보고한다."
+          }
+        ]
+      },
+      {
+        "area": "social",
+        "tier": "advanced",
+        "points": 6,
+        "correctOptionId": "1",
+        "prompt": "위 포스터에 대해 알 수 있는 것은 무엇입니까?",
+        "stimulusText": "일회용품 줄이기 캠페인\n• 일시: 6월 5일(수) 오전 9시\n• 장소: 학교 운동장\n• 내용: 일회용 컵 대신 내 컵 쓰기 약속, 일회용품 없는 하루 체험\n• 참여하는 학생에게는 선물을 드립니다.\n지구를 지키는 작은 실천에 함께합시다!",
+        "stimulusSpans": [
+          {
+            "text": "일회용품 줄이기 캠페인",
+            "style": "strong"
+          },
+          {
+            "text": "\n• 일시: 6월 5일(수) 오전 9시\n• 장소: 학교 운동장\n• 내용: 일회용 컵 대신 내 컵 쓰기 약속, 일회용품 없는 하루 체험\n• 참여하는 학생에게는 선물을 드립니다.\n지구를 지키는 작은 실천에 함께합시다!",
+            "style": "plain"
+          }
+        ],
+        "options": [
+          {
+            "id": "1",
+            "text": "캠페인이 열리는 장소"
+          },
+          {
+            "id": "2",
+            "text": "참여한 학생의 이름"
+          },
+          {
+            "id": "3",
+            "text": "지난해 참여한 학생 수"
+          },
+          {
+            "id": "4",
+            "text": "캠페인의 결과"
+          }
+        ]
+      },
+      {
+        "area": "korean",
+        "tier": "advanced",
+        "points": 6,
+        "correctOptionId": "2",
+        "prompt": "윗글에서 주장이 가장 잘 드러난 부분은 어디입니까?",
+        "stimulusText": "㉮책을 읽으면 새로운 지식을 얻을 수 있다. ㉯독서는 지식과 경험을 주므로 우리는 매일 책을 읽어야 한다. ㉰이야기를 읽으며 여러 경험을 할 수 있다. ㉱실제로 책을 많이 읽은 학생은 글쓰기 점수가 높다는 조사 결과가 있다.",
+        "stimulusSpans": [
+          {
+            "text": "㉮책을 읽으면 새로운 지식을 얻을 수 있다.",
+            "style": "underline"
+          },
+          {
+            "text": " ",
+            "style": "plain"
+          },
+          {
+            "text": "㉯독서는 지식과 경험을 주므로 우리는 매일 책을 읽어야 한다.",
+            "style": "underline"
+          },
+          {
+            "text": " ",
+            "style": "plain"
+          },
+          {
+            "text": "㉰이야기를 읽으며 여러 경험을 할 수 있다.",
+            "style": "underline"
+          },
+          {
+            "text": " ",
+            "style": "plain"
+          },
+          {
+            "text": "㉱실제로 책을 많이 읽은 학생은 글쓰기 점수가 높다는 조사 결과가 있다.",
+            "style": "underline"
+          }
+        ],
+        "options": [
+          {
+            "id": "1",
+            "text": "㉮"
+          },
+          {
+            "id": "2",
+            "text": "㉯"
+          },
+          {
+            "id": "3",
+            "text": "㉰"
+          },
+          {
+            "id": "4",
+            "text": "㉱"
+          }
+        ]
+      },
+      {
+        "area": "math",
+        "tier": "advanced",
+        "points": 6,
+        "correctOptionId": "4",
+        "prompt": "윗글에서 알 수 있는 것은 무엇입니까?",
+        "stimulusText": "원의 둘레를 원주라고 한다. 원주를 지름으로 나눈 값을 원주율이라고 한다. 원주율은 원의 크기가 달라도 항상 같으므로 약 3.14로 나타낸다.",
+        "options": [
+          {
+            "id": "1",
+            "text": "원주율은 원의 크기에 따라 달라진다."
+          },
+          {
+            "id": "2",
+            "text": "원주는 원의 넓이를 뜻한다."
+          },
+          {
+            "id": "3",
+            "text": "원주율은 지름에 원주를 곱한 값이다."
+          },
+          {
+            "id": "4",
+            "text": "원주를 지름으로 나눈 값이 원주율이다."
+          }
+        ]
+      }
+    ]
+  }
+}

@@ -1,6 +1,6 @@
 # 가나다계단 FastAPI 백엔드
 
-교사·학생 로그인부터 클래스, 최초 진단, 자료·문항 검토와 배포, 학습 풀이까지 실행할 수 있는 개발 서버입니다. 기본 실행은 **가상 계정과 자료를 사용하는 단일 프로세스 메모리 모드**입니다. 세션, 업로드, 초안, 답안과 진단 진행은 서버를 재시작하면 초기화됩니다.
+교사·학생 로그인부터 클래스, 최초 진단, 자료·문항 검토와 배포, 학습 풀이까지 실행할 수 있는 개발 서버입니다. DB 설정 없이 실행하면 **메모리 모드**로 동작하며 변경 내용은 서버 재시작 시 초기화됩니다. 기존 MariaDB를 쓰려면 아래 Windows 연결 안내를 따르세요.
 
 ## VS Code에서 시작
 
@@ -18,7 +18,7 @@ python -m uvicorn app.main:app --host 127.0.0.1 --port 8081
 
 VS Code에서 `Python: Select Interpreter`로 `.venv`의 인터프리터를 선택하면 **가나다계단 FastAPI** 구성으로 F5 디버깅할 수 있습니다. 서버의 `/docs`에서 Swagger UI, `/openapi.json`에서 현재 구현된 계약, `/api/v1/health`에서 실행 상태를 확인할 수 있습니다.
 
-백엔드를 8081 포트에서 실행한 상태에서 별도 터미널을 엽니다.
+프론트엔드에는 Node.js 22.13 이상을 사용합니다. 백엔드를 8081 포트에서 실행한 상태에서 별도 터미널을 엽니다.
 
 ```bash
 cd frontend
@@ -26,7 +26,7 @@ npm ci
 npm run dev
 ```
 
-Vite는 기본 5173 포트에서 실행되며 `/api` 요청을 백엔드의 8081 포트로 전달합니다. API 접두사는 `/api/v1`입니다. 현재 UI는 교사 대시보드, 교사 원본 자료 목록, 학생 대시보드와 연동용 로그인·클래스 선택을 제공합니다.
+Vite는 기본 5173 포트에서 실행되며 `/api` 요청을 백엔드의 8081 포트로 전달합니다. API 접두사는 `/api/v1`입니다. 현재 UI는 교사 대시보드·원본 자료 목록, 학생 대시보드·한국어 진단평가·진단 결과, 로그인·클래스 선택을 제공합니다.
 
 MariaDB DDL·DML, API 명세·mock 서버·테스트, 비교용 프론트엔드 원본, 검토 보고서와 화면 캡처는 [인수인계 자료](docs/handoff/README.md)에 있습니다.
 
@@ -40,9 +40,47 @@ MariaDB DDL·DML, API 명세·mock 서버·테스트, 비교용 프론트엔드 
 | `t_science` | 교사 | 같은 클래스의 과학 자료·문항 |
 | `s_a` | 학생 | 진단 완료, 배포된 자료·문항 조회 및 풀이 |
 | `s_b` | 학생 | 진단 완료, 교사 초안과 학생 화면의 노출 차이 |
-| `s_pending` | 학생 | 중단된 진단 재개 |
+| `s_pending` | 학생 | 학년군을 선택해 한국어 진단평가 시작, 새로고침 후 이어하기 |
 | `s_new` | 학생 | 클래스 초대 수락 후 최초 진단 |
 | `t_outside`, `s_outside` | 교사, 학생 | 다른 클래스에 대한 접근 차단 |
+
+## 학생 한국어 진단평가
+
+진단평가 PR이 병합되기 전에는 `feat/korean-assessment`에서 확인할 수 있습니다. ‘진단 화면은 아직 이 프론트엔드에 구현하지 않았습니다’라는 문구가 보이면 VS Code에서 현재 브랜치를 확인해 주세요. 기존 개발 서버를 종료한 뒤 저장소 루트에서 다음을 실행합니다.
+
+```bash
+git fetch origin
+git switch feat/korean-assessment
+git pull --ff-only origin feat/korean-assessment
+```
+
+같은 폴더에서 백엔드와 프론트엔드를 다시 켭니다. 백엔드는 VS Code의 **가나다계단 FastAPI**를 실행하고, 별도 PowerShell에서 `cd frontend` 후 `npm.cmd run dev`를 실행합니다.
+
+1. 학생 `s_pending`으로 로그인합니다.
+2. 초등 3~4학년 또는 초등 5~6학년을 고릅니다. 각 평가에는 듣기 15문항과 읽기 20문항이 있습니다.
+3. 해당 문항에서 **듣기**로 음원을 재생합니다. 답을 고르고 **다음**을 누르거나 **모르겠어요**로 제출합니다. 새로고침하거나 재로그인하면 처음으로 답을 제출하지 않은 문항부터 이어집니다.
+4. 결과에서 듣기·읽기 종합과 국어·수학·사회·과학·생활한국어 수준을 확인합니다. 완료 후 학생 사이드바의 **진단 결과**에서 다시 볼 수 있습니다.
+
+음원·이미지는 `frontend/public/diagnostic-assets/{학년군}/{교과 코드}/{listening 또는 reading}/`에서 제공합니다. 문항·정답·배점은 서버의 `app/diagnostic/data/korean_assessment.json`에 있고 React 화면에는 현재 문항의 표시용 데이터만 전달합니다. 첨부 문항의 순서와 배점 기준을 사용하며, 기존 대시보드에는 교과별 환산 점수도 제공합니다. 초등 3~4학년 듣기 5번은 첨부 문항의 선지 텍스트가 비어 있어 지도·음원과 번호 선지를 표시합니다.
+
+화면 제작과 백엔드 점검 항목은 [진단평가 화면 계획](docs/diagnostic-frontend-plan.md)에 정리했습니다.
+
+## 교사 자료 제작
+
+교사로 로그인해 **자료 제작**을 엽니다. 원본 PDF를 등록하거나 기존 원본을 선택하고, 변환할 쪽과 진단을 완료한 학생을 고릅니다. 최대 10쪽을 한 번에 변환합니다. 원본·변환 지면을 비교하면서 초안을 수정하고 검토를 완료한 뒤 학생에게 배포하거나 PDF를 저장할 수 있습니다. 글자가 없는 쪽은 원본으로 표시합니다. 저장한 PDF에는 이미지로 합성한 지면과 핵심어·학습 도움말이 포함됩니다.
+
+실제 모델을 사용할 때는 먼저 백엔드 의존성을 다시 설치합니다. MariaDB를 사용하는 Windows에서는 저장소 루트의 PowerShell에서 실행합니다.
+
+```powershell
+.\.venv\Scripts\python.exe -m pip install -r requirements-mariadb.txt
+.\.venv\Scripts\python.exe -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+```
+
+마지막 명령에서 생성한 값을 로컬 `.env`의 `GANADA_SOLAR_ENCRYPTION_KEY`에 넣고 F5로 백엔드를 다시 실행합니다. 이 값은 교사별 Solar API 키를 암호화하는 서버 키입니다. 각 교사는 자료 제작 화면에서 자신의 Solar API 키를 등록합니다. **변환 시작**을 눌렀을 때 백엔드에서 Solar를 호출합니다. 모델 기본값은 `solar-pro-4`이고, 실제 발급 계정의 모델 ID가 다르면 `GANADA_SOLAR_MODEL`에서 맞출 수 있습니다.
+
+이미 MariaDB 전용 계정을 만들었다면 아래 **PDF 제작 권한**을 추가합니다. DB 모드의 원본 업로드는 기본적으로 저장소의 `.ganada-files/`에 저장됩니다. 다른 경로를 써야 한다면 `GANADA_DB_FILES_DIR`을 설정하고, 예시 PDF도 기존 `seed/` 상대 경로에 배치합니다.
+
+[기능 병합 계획](docs/pdf-conversion-plan.md)
 
 ## API 사용
 
@@ -53,3 +91,43 @@ MariaDB DDL·DML, API 명세·mock 서버·테스트, 비교용 프론트엔드 
 현재 PDF 업로드는 텍스트가 포함된 PDF를 10 MiB, 100페이지, 추출 텍스트 25만 자까지 받습니다. 스캔 PDF의 OCR, 파일 악성코드 검사 및 운영용 비공개 파일 저장소는 후속 작업입니다. 아직은 실제 학생 데이터나 운영 계정으로 실행하지 마세요.
 
 전체 기능의 DML 대응, 팀원 기능 연결 지점, 다음 구현 순서는 [백엔드 개발 계획](docs/backend-plan.md)에서 확인할 수 있습니다.
+
+## Windows에서 MariaDB 연결
+
+기존 `ganada`에 예시 데이터 검증까지 마쳤다면 SQL을 다시 실행할 필요가 없습니다. 처음 준비하는 경우 [예시 SQL과 ZIP](docs/mariadb-seed/)을 참고하세요.
+
+`ganada_app` 전용 계정이 없다면 HeidiSQL의 관리자 세션에서 아래 SQL을 한 번 실행합니다. 비밀번호 자리에는 로컬에서 정한 값으로 바꾸세요. 계정이 이미 있으면 `CREATE USER`를 생략합니다.
+
+```sql
+CREATE USER 'ganada_app'@'127.0.0.1' IDENTIFIED BY '여기에_새_비밀번호';
+GRANT SELECT ON ganada.* TO 'ganada_app'@'127.0.0.1';
+GRANT INSERT, UPDATE ON ganada.user_sessions TO 'ganada_app'@'127.0.0.1';
+GRANT INSERT, UPDATE ON ganada.student_diagnostics TO 'ganada_app'@'127.0.0.1';
+GRANT INSERT ON ganada.diagnostic_answers TO 'ganada_app'@'127.0.0.1';
+GRANT INSERT ON ganada.diagnostic_part_results TO 'ganada_app'@'127.0.0.1';
+GRANT INSERT ON ganada.diagnostic_area_results TO 'ganada_app'@'127.0.0.1';
+
+-- PDF 제작 권한
+GRANT INSERT ON ganada.files TO 'ganada_app'@'127.0.0.1';
+GRANT INSERT ON ganada.source_materials TO 'ganada_app'@'127.0.0.1';
+GRANT INSERT, UPDATE ON ganada.ai_credentials TO 'ganada_app'@'127.0.0.1';
+GRANT INSERT, UPDATE ON ganada.ai_requests TO 'ganada_app'@'127.0.0.1';
+GRANT INSERT, UPDATE ON ganada.student_materials TO 'ganada_app'@'127.0.0.1';
+```
+
+VS Code의 저장소 루트에서 PowerShell로 실행합니다.
+
+```powershell
+.\.venv\Scripts\python.exe -m pip install -r requirements-mariadb.txt
+if (-not (Test-Path .env)) { Copy-Item .env.example .env }
+```
+
+`.env`에서 `GANADA_DB_HOST=127.0.0.1`, `GANADA_DB_PORT=3306`, `GANADA_DB_NAME=ganada`를 확인합니다. `GANADA_DB_USER`와 `GANADA_DB_PASSWORD`에는 DB 계정과 비밀번호를 넣으세요. 이 비밀번호는 브라우저에서 쓰는 예시 계정 비밀번호와 별개이며, `.env`는 Git에서 제외됩니다. 백엔드를 재시작할 때 F5 구성이 이 파일을 읽습니다.
+
+### 동작 확인
+
+1. F5로 백엔드를 켭니다. `http://127.0.0.1:8081/api/v1/health`에서 `mode: "mariadb"`와 `databaseConnected: true`가 표시되어야 합니다. 시작이 실패하면 터미널의 메시지에서 MariaDB 서비스, 스키마, 계정 권한을 확인하세요.
+2. 프론트엔드에서 교사 `t_math`와 `t_science`로 각각 로그인합니다. 두 계정은 같은 반을 보고, 자료 목록은 담당 교과에 해당하는 자료만 보여야 합니다.
+3. 학생 `s_pending`으로 로그인해 학년군을 고르고 첫 답안을 제출합니다. F5 백엔드를 중지했다가 다시 켜고 브라우저를 새로 고침합니다. 두 번째 문항부터 열린다면 저장과 이어 풀기가 확인된 것입니다. DB에서 확인하려면 [답안 확인 SQL](docs/mariadb-seed/README.md#앱-연결-후-검사할-흐름)을 실행합니다.
+
+MariaDB 모드에서는 계정, 세션, 클래스, 진단 문항·답안·결과, 배포 자료와 문제를 DB에서 조회합니다. 진단 시작·답안 제출과 채점 결과, 세션 생성·종료를 DB에 기록합니다. PDF 등록, 교사별 키 및 PDF 작업 상태, 변환본 수정·검토·배포도 DB에 기록합니다. 클래스 생성·초대, 문제 작성과 일반 학습 문제 풀이의 DB 쓰기 API는 501을 반환합니다. DB 접속이 끊기면 메모리로 자동 전환하지 않습니다.

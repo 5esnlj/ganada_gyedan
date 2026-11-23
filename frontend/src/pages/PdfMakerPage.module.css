@@ -1,0 +1,246 @@
+.page,
+.section,
+.panel,
+.form {
+  display: grid;
+  min-width: 0;
+  gap: var(--space-m);
+}
+
+.page {
+  gap: var(--space-l);
+}
+
+.panel {
+  padding: var(--space-l);
+  border: 1px solid var(--color-line);
+  border-radius: var(--radius-main);
+  background: var(--color-surface);
+  box-shadow: var(--shadow-soft);
+}
+
+.section h2,
+.panel h2,
+.page p {
+  margin: 0;
+}
+
+.section h2,
+.panel h2 {
+  font-size: var(--font-size-card-title);
+}
+
+.muted {
+  color: var(--color-text-sub);
+}
+
+.cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 13rem), 1fr));
+  gap: var(--space-m);
+}
+
+.form label {
+  display: grid;
+  min-width: 0;
+  gap: var(--space-xs);
+}
+
+.page input:not([type='checkbox']),
+.page select,
+.page textarea {
+  min-width: 0;
+  max-width: 100%;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-nav);
+  padding: var(--space-s);
+  background: var(--color-surface);
+  color: var(--color-text);
+  font: inherit;
+}
+
+.page textarea {
+  resize: vertical;
+  line-height: 1.55;
+}
+
+.page input[type='checkbox'] {
+  accent-color: var(--color-primary);
+}
+
+.actions,
+.row,
+.failure {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-s);
+}
+
+.actions {
+  justify-content: flex-end;
+}
+
+.row {
+  justify-content: space-between;
+}
+
+.failure {
+  padding: var(--space-m);
+  border-radius: var(--radius-nav);
+  background: var(--color-card-red);
+}
+
+.details {
+  padding: var(--space-m);
+  border: 1px solid var(--color-line);
+  border-radius: var(--radius-nav);
+  background: var(--color-surface);
+}
+
+.details summary {
+  cursor: pointer;
+  font-weight: var(--font-weight-bold);
+}
+
+.details svg {
+  vertical-align: middle;
+}
+
+.details p {
+  max-height: 18rem;
+  margin-block-start: var(--space-m);
+  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.range,
+.targets {
+  display: grid;
+  min-width: 0;
+  gap: var(--space-s);
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.range {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.range legend,
+.targets legend {
+  margin: 0 0 var(--space-s);
+  padding: 0;
+  font-weight: var(--font-weight-bold);
+}
+
+.targets {
+  max-height: 22rem;
+  overflow-y: auto;
+}
+
+.targets label {
+  display: flex;
+  align-items: center;
+  padding: var(--space-xs) var(--space-s);
+  border-radius: var(--radius-nav);
+  background: var(--color-background);
+}
+
+.target > small,
+.reading {
+  margin-inline-start: auto;
+}
+
+.reading {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-xs);
+}
+
+.records {
+  display: grid;
+  gap: var(--space-xs);
+  padding: 0;
+  margin: 0;
+  list-style: none;
+}
+
+.records > li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-xs);
+  min-width: 0;
+  padding: var(--space-s);
+  border-radius: var(--radius-nav);
+  background: var(--color-background);
+  overflow-wrap: anywhere;
+}
+
+.records p {
+  margin-block-start: var(--space-xs);
+}
+
+.status {
+  color: var(--color-text-sub);
+}
+
+.compare {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-m);
+}
+
+.compare figure {
+  display: grid;
+  align-content: start;
+  gap: var(--space-s);
+  min-width: 0;
+  padding: var(--space-s);
+  margin: 0;
+  border-radius: var(--radius-nav);
+  background: var(--color-background);
+}
+
+.compare figcaption {
+  font-weight: var(--font-weight-bold);
+}
+
+.compare img {
+  display: block;
+  width: 100%;
+  background: var(--color-surface);
+  box-shadow: var(--shadow-page);
+}
+
+.notices,
+.note {
+  margin: 0;
+  padding: var(--space-s) var(--space-l);
+  border-radius: var(--radius-nav);
+  background: var(--color-card-yellow);
+  line-height: 1.55;
+}
+
+.notices {
+  padding-inline-start: var(--space-xxl);
+}
+
+.note ol,
+.note ul {
+  margin-block-end: 0;
+}
+
+@media (max-width: 45rem) {
+  .panel {
+    padding: var(--space-m);
+  }
+
+  .compare {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

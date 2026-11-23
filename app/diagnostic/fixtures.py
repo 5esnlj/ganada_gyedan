@@ -59,6 +59,7 @@ def seed_diagnostics(state: MemoryStore, provider: FormProvider) -> None:
             diagnostic.update(
                 status="completed", completedAt=timestamp(), answers=answers, results=grade(form, answers)
             )
+        diagnostic["demoSeed"] = True
         state.diagnostics[student_id] = diagnostic
 
 

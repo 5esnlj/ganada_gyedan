@@ -13,7 +13,9 @@
     "test": "tsc -p tsconfig.tests.json && node --test tests/*.test.mjs"
   },
   "dependencies": {
+    "jspdf": "4.2.1",
     "lucide-react": "^0.460.0",
+    "pdfjs-dist": "6.5.438",
     "react": "^18.3.1",
     "react-dom": "^18.3.1"
   },

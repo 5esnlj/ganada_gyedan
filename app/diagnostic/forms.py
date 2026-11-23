@@ -7,7 +7,7 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from app.core.dto import Area
 
-from .dto import QuestionDisplay, Skill, Tier
+from .dto import GradeBand, QuestionDisplay, Skill, Tier
 
 
 AREAS: tuple[Area, ...] = ("korean", "math", "social", "science", "daily")
@@ -35,12 +35,13 @@ class DiagnosticItem(BaseModel):
 
 
 class DiagnosticForm(BaseModel):
-    """Immutable published form. The current rubric is DML C04–C05."""
+    """Immutable published form with a rubric fixed for the lifetime of an attempt."""
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     id: str = Field(min_length=1, max_length=100)
-    rubric: Literal["dml-v1"] = "dml-v1"
+    rubric: Literal["dml-v1", "korean-assessment-v1"] = "dml-v1"
+    grade_band: GradeBand | None = None
     is_synthetic: bool
     questions: tuple[DiagnosticItem, ...]
 
@@ -54,6 +55,15 @@ class DiagnosticForm(BaseModel):
         groups: dict[tuple[Area, Skill], list[DiagnosticItem]] = defaultdict(list)
         for item in self.questions:
             groups[item.display.area, item.display.skill].append(item)
+        if self.rubric == "korean-assessment-v1":
+            if self.grade_band is None:
+                raise ValueError("Korean assessment needs a grade band")
+            if any(not groups[area, skill] for area in AREAS for skill in SKILLS):
+                raise ValueError("Korean assessment needs questions for every area and skill")
+            return self
+
+        if self.grade_band is not None:
+            raise ValueError("DML v1 does not use a grade band")
         for area in AREAS:
             for skill in SKILLS:
                 part = groups[area, skill]

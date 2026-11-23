@@ -5,6 +5,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from app.core.dto import Area, Input, Level, Option, Page
 
 
+GradeBand = Literal["g34", "g56"]
 Skill = Literal["listening", "reading"]
 Tier = Literal["beginner", "intermediate", "advanced"]
 DiagnosticStateCode = Literal["not_started", "in_progress", "completed"]
@@ -12,6 +13,7 @@ DiagnosticStateCode = Literal["not_started", "in_progress", "completed"]
 
 class DiagnosticStart(Input):
     classId: str = Field(min_length=1, max_length=100)
+    gradeBand: GradeBand | None = None
 
 
 class DiagnosticAnswer(Input):
@@ -25,10 +27,25 @@ class DiagnosticStatus(BaseModel):
     totalQuestions: int
     completedQuestions: int
     nextQuestionId: str | None
+    gradeBand: GradeBand | None = None
+    availableGradeBands: list[GradeBand] = Field(default_factory=list)
 
 
 class DiagnosticOption(Option):
     model_config = ConfigDict(frozen=True)
+    imageUrl: str | None = None
+
+
+class DiagnosticTextSpan(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+    text: str
+    style: Literal["plain", "strong", "underline"]
+
+
+class DiagnosticTable(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+    headers: tuple[str, ...]
+    rows: tuple[tuple[str, ...], ...]
 
 
 class QuestionDisplay(BaseModel):
@@ -41,10 +58,18 @@ class QuestionDisplay(BaseModel):
     options: tuple[DiagnosticOption, ...] = Field(min_length=2)
     audioUrl: str | None
     stimulusText: str
+    word: str | None = None
+    imageUrl: str | None = None
+    stimulusTable: DiagnosticTable | None = None
+    promptSpans: tuple[DiagnosticTextSpan, ...] | None = None
+    stimulusSpans: tuple[DiagnosticTextSpan, ...] | None = None
 
 
 class DiagnosticQuestion(QuestionDisplay):
     isSynthetic: bool
+    maxPoints: float | None = None
+    sectionNumber: int | None = None
+    sectionTotal: int | None = None
 
 
 class DiagnosticNext(BaseModel):
@@ -72,11 +97,55 @@ class AreaResult(BaseModel):
     level: Level
 
 
+class AssessmentScore(BaseModel):
+    score: float
+    maxScore: float
+    percent: float
+
+
+class AssessmentSkillResult(AssessmentScore):
+    level: Level
+
+
+class AssessmentTierCount(BaseModel):
+    correct: int
+    total: int
+
+
+class AssessmentSubjectResult(AssessmentScore):
+    area: Literal["korean", "math", "social", "science"]
+    scoreLevel: Level
+    criterionLevel: Level
+    level: Level
+    tierCounts: dict[Tier, AssessmentTierCount]
+
+
+class AssessmentOverallResult(BaseModel):
+    score: float
+    maxScore: Literal[200]
+    level: Level
+
+
+class AssessmentCommunicationResult(AssessmentScore):
+    questionCount: int
+    status: Literal["adequate", "needs_improvement"]
+
+
+class AssessmentSummary(BaseModel):
+    gradeBand: GradeBand
+    listening: AssessmentSkillResult
+    reading: AssessmentSkillResult
+    overall: AssessmentOverallResult
+    subjects: list[AssessmentSubjectResult]
+    communication: AssessmentCommunicationResult
+
+
 class DiagnosticResults(BaseModel):
     formId: str
     isSynthetic: bool
     parts: list[PartResult]
     areas: list[AreaResult]
+    assessmentSummary: AssessmentSummary | None = None
 
 
 class StudentRow(BaseModel):

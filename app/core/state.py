@@ -32,6 +32,8 @@ class MemoryStore:
     quizzes: dict[str, Record] = field(default_factory=dict)
     attempts: dict[str, dict[str, list[Record]]] = field(default_factory=dict)
     idempotency: dict[tuple[str, ...], Record] = field(default_factory=dict)
+    ai_credentials: dict[str, Record] = field(default_factory=dict)
+    generation_jobs: dict[str, Record] = field(default_factory=dict)
 
     @staticmethod
     def new_id(prefix: str) -> str:
@@ -39,6 +41,13 @@ class MemoryStore:
 
 
 def get_store(request: Request) -> MemoryStore:
+    if getattr(request.app.state, "database_connected", False):
+        if not hasattr(request.state, "database_store"):
+            from app.core.access import COOKIE_NAME
+            from app.mariadb.store import load_store
+
+            request.state.database_store = load_store(request.cookies.get(COOKIE_NAME))
+        return request.state.database_store
     return request.app.state.store
 
 

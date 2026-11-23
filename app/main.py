@@ -1,5 +1,6 @@
 import asyncio
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, suppress
+import re
 
 from fastapi import APIRouter, FastAPI
 from fastapi.exceptions import RequestValidationError
@@ -17,6 +18,9 @@ from app.diagnostic.assessment import load_assessment_forms
 from app.diagnostic.fixtures import demo_provider, seed_diagnostics
 from app.diagnostic.forms import FormProvider, StaticFormProvider
 from app.diagnostic.router import router as diagnostic_router
+from app.generation import jobs as pdf_jobs
+from app.generation.router import router as generation_router
+from app.generation.worker import run_jobs
 from app.identity.router import router as identity_router
 from app.materials.router import router as materials_router
 from app.quizzes.router import router as quizzes_router
@@ -34,8 +38,21 @@ class Health(BaseModel):
 
 MARIADB_WRITES = {
     "/api/v1/auth/login", "/api/v1/auth/logout",
-    "/api/v1/diagnostic/start", "/api/v1/diagnostic/answers",
+    "/api/v1/diagnostic/start", "/api/v1/diagnostic/answers", "/api/v1/ai-credentials",
 }
+
+MARIADB_MATERIAL_WRITES = {
+    "POST": re.compile(r"/api/v1/(classes/[^/]+/(sources/pdf|generation-jobs)|materials/[^/]+/(review|publish))"),
+    "PATCH": re.compile(r"/api/v1/materials/[^/]+"),
+}
+
+
+def _supports_mariadb_write(method: str, path: str) -> bool:
+    path = path.rstrip("/")
+    pattern = MARIADB_MATERIAL_WRITES.get(method)
+    return (method == "POST" and path in MARIADB_WRITES) or (
+        pattern is not None and pattern.fullmatch(path) is not None
+    )
 
 
 def create_app(
@@ -51,7 +68,18 @@ def create_app(
     @asynccontextmanager
     async def lifespan(application: FastAPI):
         application.state.database_connected = database_mode and await asyncio.to_thread(check_connection)
-        yield
+        resume = None
+        if application.state.database_connected:
+            queued = await asyncio.to_thread(pdf_jobs.queued)
+            if queued:
+                resume = asyncio.create_task(run_jobs(application, queued))
+        try:
+            yield
+        finally:
+            if resume is not None:
+                resume.cancel()
+                with suppress(asyncio.CancelledError):
+                    await resume
 
     application = FastAPI(
         lifespan=lifespan,
@@ -75,6 +103,8 @@ def create_app(
     application.add_exception_handler(HTTPException, http_error)
 
     request_lock = asyncio.Lock()
+    application.state.request_lock = request_lock
+    application.state.generation_slot = asyncio.Semaphore(1)
 
     @application.middleware("http")
     async def serialize_api(request, call_next):
@@ -82,7 +112,7 @@ def create_app(
             return await call_next(request)
         if (getattr(application.state, "database_connected", False)
                 and request.method not in {"GET", "HEAD", "OPTIONS"}
-                and request.url.path.rstrip("/") not in MARIADB_WRITES):
+                and not _supports_mariadb_write(request.method, request.url.path)):
             return await api_error(request, APIError(
                 501, "MARIADB_WRITE_UNAVAILABLE", "이 작업의 MariaDB 저장은 아직 지원하지 않습니다.",
             ))
@@ -111,7 +141,7 @@ def create_app(
             databaseConnected=connected, databaseReachableAtStartup=connected,
         )
 
-    for router in (identity_router, classes_router, diagnostic_router, materials_router, quizzes_router, dashboard_router):
+    for router in (identity_router, classes_router, diagnostic_router, materials_router, quizzes_router, dashboard_router, generation_router):
         api.include_router(router)
     application.include_router(api)
     add_request_headers(application)

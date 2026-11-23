@@ -18,7 +18,7 @@ python -m uvicorn app.main:app --host 127.0.0.1 --port 8081
 
 VS Code에서 `Python: Select Interpreter`로 `.venv`의 인터프리터를 선택하면 **가나다계단 FastAPI** 구성으로 F5 디버깅할 수 있습니다. 서버의 `/docs`에서 Swagger UI, `/openapi.json`에서 현재 구현된 계약, `/api/v1/health`에서 실행 상태를 확인할 수 있습니다.
 
-백엔드를 8081 포트에서 실행한 상태에서 별도 터미널을 엽니다.
+프론트엔드에는 Node.js 22.13 이상을 사용합니다. 백엔드를 8081 포트에서 실행한 상태에서 별도 터미널을 엽니다.
 
 ```bash
 cd frontend
@@ -65,6 +65,23 @@ git pull --ff-only origin feat/korean-assessment
 
 화면 제작과 백엔드 점검 항목은 [진단평가 화면 계획](docs/diagnostic-frontend-plan.md)에 정리했습니다.
 
+## 교사 자료 제작
+
+교사로 로그인해 **자료 제작**을 엽니다. 원본 PDF를 등록하거나 기존 원본을 선택하고, 변환할 쪽과 진단을 완료한 학생을 고릅니다. 최대 10쪽을 한 번에 변환합니다. 원본·변환 지면을 비교하면서 초안을 수정하고 검토를 완료한 뒤 학생에게 배포하거나 PDF를 저장할 수 있습니다. 글자가 없는 쪽은 원본으로 표시합니다. 저장한 PDF에는 이미지로 합성한 지면과 핵심어·학습 도움말이 포함됩니다.
+
+실제 모델을 사용할 때는 먼저 백엔드 의존성을 다시 설치합니다. MariaDB를 사용하는 Windows에서는 저장소 루트의 PowerShell에서 실행합니다.
+
+```powershell
+.\.venv\Scripts\python.exe -m pip install -r requirements-mariadb.txt
+.\.venv\Scripts\python.exe -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+```
+
+마지막 명령에서 생성한 값을 로컬 `.env`의 `GANADA_SOLAR_ENCRYPTION_KEY`에 넣고 F5로 백엔드를 다시 실행합니다. 이 값은 교사별 Solar API 키를 암호화하는 서버 키입니다. 각 교사는 자료 제작 화면에서 자신의 Solar API 키를 등록합니다. **변환 시작**을 눌렀을 때 백엔드에서 Solar를 호출합니다. 모델 기본값은 `solar-pro-4`이고, 실제 발급 계정의 모델 ID가 다르면 `GANADA_SOLAR_MODEL`에서 맞출 수 있습니다.
+
+이미 MariaDB 전용 계정을 만들었다면 아래 **PDF 제작 권한**을 추가합니다. DB 모드의 원본 업로드는 기본적으로 저장소의 `.ganada-files/`에 저장됩니다. 다른 경로를 써야 한다면 `GANADA_DB_FILES_DIR`을 설정하고, 예시 PDF도 기존 `seed/` 상대 경로에 배치합니다.
+
+[기능 병합 계획](docs/pdf-conversion-plan.md)
+
 ## API 사용
 
 로그인 응답의 세션 쿠키를 유지하고, 이후 쓰기 요청에 응답의 `csrfToken`을 `X-CSRF-Token`으로 전달합니다. 문항이나 자료를 수정·검토·배포할 때는 상세 조회나 직전 변경 응답의 `ETag`를 `If-Match`로 보냅니다. 문항 답안을 재전송할 때는 같은 `Idempotency-Key`를 사용합니다. 충돌과 유효성 오류를 포함한 API 오류는 `code`, `message`, `requestId`, `details`로 반환됩니다.
@@ -89,6 +106,13 @@ GRANT INSERT, UPDATE ON ganada.student_diagnostics TO 'ganada_app'@'127.0.0.1';
 GRANT INSERT ON ganada.diagnostic_answers TO 'ganada_app'@'127.0.0.1';
 GRANT INSERT ON ganada.diagnostic_part_results TO 'ganada_app'@'127.0.0.1';
 GRANT INSERT ON ganada.diagnostic_area_results TO 'ganada_app'@'127.0.0.1';
+
+-- PDF 제작 권한
+GRANT INSERT ON ganada.files TO 'ganada_app'@'127.0.0.1';
+GRANT INSERT ON ganada.source_materials TO 'ganada_app'@'127.0.0.1';
+GRANT INSERT, UPDATE ON ganada.ai_credentials TO 'ganada_app'@'127.0.0.1';
+GRANT INSERT, UPDATE ON ganada.ai_requests TO 'ganada_app'@'127.0.0.1';
+GRANT INSERT, UPDATE ON ganada.student_materials TO 'ganada_app'@'127.0.0.1';
 ```
 
 VS Code의 저장소 루트에서 PowerShell로 실행합니다.
@@ -106,4 +130,4 @@ if (-not (Test-Path .env)) { Copy-Item .env.example .env }
 2. 프론트엔드에서 교사 `t_math`와 `t_science`로 각각 로그인합니다. 두 계정은 같은 반을 보고, 자료 목록은 담당 교과에 해당하는 자료만 보여야 합니다.
 3. 학생 `s_pending`으로 로그인해 학년군을 고르고 첫 답안을 제출합니다. F5 백엔드를 중지했다가 다시 켜고 브라우저를 새로 고침합니다. 두 번째 문항부터 열린다면 저장과 이어 풀기가 확인된 것입니다. DB에서 확인하려면 [답안 확인 SQL](docs/mariadb-seed/README.md#앱-연결-후-검사할-흐름)을 실행합니다.
 
-MariaDB 모드에서는 계정, 세션, 클래스, 진단 문항·답안·결과, 배포 자료와 문제를 DB에서 조회합니다. 진단 시작·답안 제출과 채점 결과, 세션 생성·종료를 DB에 기록합니다. 클래스 생성·초대, 자료 및 문제 쓰기, 일반 학습 문제 풀이 저장은 아직 이 모드에 연결되지 않아 해당 쓰기 API는 501을 반환합니다. DB 접속이 끊기면 메모리로 자동 전환하지 않습니다.
+MariaDB 모드에서는 계정, 세션, 클래스, 진단 문항·답안·결과, 배포 자료와 문제를 DB에서 조회합니다. 진단 시작·답안 제출과 채점 결과, 세션 생성·종료를 DB에 기록합니다. PDF 등록, 교사별 키 및 PDF 작업 상태, 변환본 수정·검토·배포도 DB에 기록합니다. 클래스 생성·초대, 문제 작성과 일반 학습 문제 풀이의 DB 쓰기 API는 501을 반환합니다. DB 접속이 끊기면 메모리로 자동 전환하지 않습니다.

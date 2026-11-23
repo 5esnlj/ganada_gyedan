@@ -15,12 +15,12 @@ def add_request_headers(app: FastAPI) -> None:
                     _add_header(operation, "X-CSRF-Token", "로그인 또는 /auth/me 응답의 csrfToken")
                 if method == "patch" or (method == "post" and path.endswith(("/review", "/publish"))):
                     _add_header(operation, "If-Match", "상세 조회 또는 직전 변경 응답의 ETag 원문")
-                if path == "/api/v1/quizzes/{quizId}/answers":
+                if method == "post" and path in {"/api/v1/quizzes/{quizId}/answers", "/api/v1/classes/{classId}/generation-jobs"}:
                     for parameter in operation["parameters"]:
                         if parameter["name"] == "Idempotency-Key":
                             parameter.update(
                                 required=True,
-                                description="같은 답안을 재전송할 때 재사용하는 요청키",
+                                description="같은 요청을 재전송할 때 재사용하는 요청키",
                                 schema={"type": "string", "minLength": 1, "maxLength": 64},
                             )
         return document

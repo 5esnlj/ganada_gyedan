@@ -30,7 +30,7 @@ def _id(value):
     return str(value) if value is not None else None
 
 
-def load_store(token: str | None) -> MariaDBStore:
+def load_store(token: str | None, *, include_learning: bool = False) -> MariaDBStore:
     store = MariaDBStore()
     with transaction() as cursor:
         cursor.execute("""SELECT id, login_id, role, display_name, native_language_code, status,
@@ -60,7 +60,7 @@ def load_store(token: str | None) -> MariaDBStore:
         load_session(cursor, store, token)
         load_forms(cursor, store)
         load_diagnostics(cursor, store)
-        if store.sessions:
+        if store.sessions or include_learning:
             _load_learning_content(cursor, store)
     return store
 
@@ -121,14 +121,17 @@ def _load_learning_content(cursor, store):
         })
 
 
+def row_version(updated):
+    delta = updated - datetime(1970, 1, 1)
+    return (delta.days * 86400 + delta.seconds) * 1_000_000 + delta.microseconds
+
+
 def _assignment(store, row):
     source_id = str(row["source_material_id"])
     updated = row["updated_at"]
-    delta = updated - datetime(1970, 1, 1)
-    version = (delta.days * 86400 + delta.seconds) * 1_000_000 + delta.microseconds
     return {
         "classId": str(row["class_id"]), "sourceId": source_id, "studentMemberId": str(row["student_member_id"]),
-        "subject": store.sources[source_id]["subject"], "status": row["status"], "version": version,
+        "subject": store.sources[source_id]["subject"], "status": row["status"], "version": row_version(updated),
         "createdBy": str(row["created_by_user_id"]), "createdAt": _date(row["created_at"]),
         "updatedAt": _date(updated), "publishedAt": _date(row["published_at"]), "reviewedAt": _date(row["reviewed_at"]),
         "publishedBy": _id(row["published_by_user_id"]), "reviewedBy": _id(row["reviewed_by_user_id"]),

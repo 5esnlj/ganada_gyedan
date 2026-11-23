@@ -3,16 +3,19 @@
 from typing import Annotated
 from urllib.parse import quote
 
-from fastapi import APIRouter, File, Request, Response, UploadFile
+from fastapi import APIRouter, File, Form, Request, Response, UploadFile
 
 from app.core.access import auth
 from app.core.dto import Area, Page
+from app.core.errors import fail
 from app.core.review import check_version, set_etag
 from app.core.state import Store
 from app.materials import service
-from app.materials.dto import MaterialOut, MaterialPatch, SourceCreate, SourceOut, UploadOut
-from app.materials.pdf import MAX_UPLOAD_BYTES
+from app.materials.dto import MaterialOut, MaterialPatch, PdfInfo, SourceCreate, SourceOut, UploadOut
+from app.materials.pdf import MAX_UPLOAD_BYTES, extract_pdf_pages
+from app.mariadb.authoring import save_revision, save_source
 from app.mariadb.files import read_source_file
+from app.mariadb.store import MariaDBStore
 
 router = APIRouter()
 
@@ -60,6 +63,24 @@ def register_source(classId: str, body: SourceCreate, request: Request, store: S
     return service.create_source(store, teacher, classId, body)
 
 
+@router.post("/classes/{classId}/sources/pdf", status_code=201, response_model=SourceOut, tags=["원본 자료"])
+def register_pdf(
+    classId: str, request: Request, store: Store, file: Annotated[UploadFile, File()],
+    title: Annotated[str, Form(min_length=1, max_length=200, pattern=r"\S")],
+    unit: Annotated[str, Form(max_length=150)] = "",
+):
+    teacher = auth(request, "teacher")
+    upload = service.store_upload(
+        store, teacher, classId, file.filename, file.content_type, file.file.read(MAX_UPLOAD_BYTES + 1),
+    )
+    try:
+        source = service.create_source(store, teacher, classId, SourceCreate(fileId=upload.id, title=title, unit=unit))
+    except Exception:
+        store.files.pop(upload.id, None)
+        raise
+    return save_source(source, store.files[upload.id]) if isinstance(store, MariaDBStore) else source
+
+
 @router.get("/classes/{classId}/sources", response_model=Page[SourceOut], tags=["원본 자료"])
 def sources(classId: str, request: Request, store: Store, subject: Area | None = None):
     teacher = auth(request, "teacher")
@@ -70,6 +91,16 @@ def sources(classId: str, request: Request, store: Store, subject: Area | None =
 def source(sourceId: str, request: Request, store: Store):
     teacher = auth(request, "teacher")
     return service.require_source(store, teacher, sourceId)
+
+
+@router.get("/sources/{sourceId}/pdf-info", response_model=PdfInfo, tags=["원본 자료"])
+def pdf_info(sourceId: str, request: Request, store: Store):
+    teacher = auth(request, "teacher")
+    original = service.require_source(store, teacher, sourceId)
+    if not original["fileId"]:
+        fail(404, "NOT_FOUND", "원본 PDF가 없습니다.")
+    file = service.require_file(store, teacher, original["fileId"])
+    return PdfInfo(pageCount=len(extract_pdf_pages(read_source_file(file) if "objectKey" in file else file["data"])))
 
 
 @router.get(
@@ -95,7 +126,10 @@ def patch_material(
     teacher = auth(request, "teacher")
     record = service.require_material(store, teacher, materialId, write=True)
     check_version(request, record)
+    expected = record["version"]
     service.update_content(record, body.content)
+    if isinstance(store, MariaDBStore):
+        save_revision(record, expected)
     set_etag(response, record)
     return service.material_view(store, teacher, record)
 
@@ -110,7 +144,10 @@ def _transition(
     teacher = auth(request, "teacher")
     record = service.require_material(store, teacher, material_id, write=True)
     check_version(request, record)
+    expected = record["version"]
     service.transition_material(store, teacher, record, target)
+    if isinstance(store, MariaDBStore):
+        save_revision(record, expected)
     set_etag(response, record)
     return service.material_view(store, teacher, record)
 

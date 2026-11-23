@@ -13,7 +13,7 @@ MAX_PAGES = 100
 MAX_TEXT_LENGTH = 250_000
 
 
-def extract_source_text(data: bytes) -> tuple[str, list[dict[str, str]]]:
+def extract_pdf_pages(data: bytes) -> list[str]:
     try:
         reader = PdfReader(BytesIO(data))
         if reader.is_encrypted:
@@ -29,11 +29,15 @@ def extract_source_text(data: bytes) -> tuple[str, list[dict[str, str]]]:
                 text_length += len(text)
                 if text_length > MAX_TEXT_LENGTH:
                     fail(422, "PDF_EXTRACTION_LIMIT", "PDF 본문이 추출 한도를 초과했습니다.")
-                page_text.append(text)
+            page_text.append(text)
     except (PyPdfError, ValueError, TypeError, KeyError, IndexError, OSError, RuntimeError):
         fail(422, "PDF_UNREADABLE", "PDF 본문을 읽을 수 없습니다.")
 
-    source_text = "\n\n".join(page_text)
+    return page_text
+
+
+def extract_source_text(data: bytes) -> tuple[str, list[dict[str, str]]]:
+    source_text = "\n\n".join(filter(None, extract_pdf_pages(data)))
     if not source_text:
         fail(422, "PDF_TEXT_REQUIRED", "텍스트를 선택할 수 있는 PDF 파일을 올려 주세요.")
     return source_text, source_sentences(source_text)

@@ -32,6 +32,8 @@ class MemoryStore:
     quizzes: dict[str, Record] = field(default_factory=dict)
     attempts: dict[str, dict[str, list[Record]]] = field(default_factory=dict)
     idempotency: dict[tuple[str, ...], Record] = field(default_factory=dict)
+    ai_credentials: dict[str, Record] = field(default_factory=dict)
+    generation_jobs: dict[str, Record] = field(default_factory=dict)
 
     @staticmethod
     def new_id(prefix: str) -> str:

@@ -37,7 +37,7 @@ class SourceOut(BaseModel):
     id: str
     classId: str
     createdBy: str
-    fileId: str
+    fileId: str | None
     title: str
     subject: Area
     unit: str
@@ -51,16 +51,40 @@ class SourceOut(BaseModel):
 class Paragraph(Input):
     id: str = Field(min_length=1, max_length=64, pattern=r"\S")
     text: str = Field(min_length=1, max_length=10000, pattern=r"\S")
+    page: int | None = Field(default=None, ge=1, le=100)
+
+
+class PdfInfo(BaseModel):
+    pageCount: int
+
+
+class StudyVisual(Input):
+    kind: Literal["rel", "seq", "list"]
+    title: str = Field(default="", max_length=200)
+    center: str | None = Field(default=None, max_length=200)
+    items: list[str] = Field(min_length=2, max_length=6)
+
+
+class StudyNote(Input):
+    blockId: str = Field(min_length=1, max_length=64)
+    text: str | None = Field(default=None, max_length=10000)
+    visual: StudyVisual | None = None
 
 
 class Content(Input):
-    paragraphs: list[Paragraph] = Field(min_length=1, max_length=100)
+    paragraphs: list[Paragraph] = Field(min_length=1, max_length=500)
     translations: list[dict[str, str]] = Field(default_factory=list)
+    omittedPages: list[int] = Field(default_factory=list, max_length=10)
+    hiddenBlockIds: list[str] = Field(default_factory=list, max_length=500)
+    studyNotes: list[StudyNote] = Field(default_factory=list, max_length=500)
 
     @model_validator(mode="after")
     def validate_paragraph_ids(self):
-        if len({item.id for item in self.paragraphs}) != len(self.paragraphs):
+        visible = {item.id for item in self.paragraphs}
+        if len(visible) != len(self.paragraphs):
             raise ValueError("문장 ID가 중복되었습니다.")
+        if visible.intersection(self.hiddenBlockIds) or any(note.blockId not in visible for note in self.studyNotes):
+            raise ValueError("문단 배치나 보조 설명이 일치하지 않습니다.")
         return self
 
 

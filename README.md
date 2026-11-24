@@ -76,7 +76,9 @@ git pull --ff-only origin feat/korean-assessment
 .\.venv\Scripts\python.exe -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
 ```
 
-마지막 명령에서 생성한 값을 로컬 `.env`의 `GANADA_SOLAR_ENCRYPTION_KEY`에 넣고 F5로 백엔드를 다시 실행합니다. 이 값은 교사별 Solar API 키를 암호화하는 서버 키입니다. 각 교사는 자료 제작 화면에서 자신의 Solar API 키를 등록합니다. **변환 시작**을 눌렀을 때 백엔드에서 Solar를 호출합니다. 모델 기본값은 `solar-pro-4`이고, 실제 발급 계정의 모델 ID가 다르면 `GANADA_SOLAR_MODEL`에서 맞출 수 있습니다.
+마지막 명령에서 생성한 값을 로컬 `.env`의 `GANADA_SOLAR_ENCRYPTION_KEY`에 넣고 F5로 백엔드를 다시 실행합니다. 이 값은 교사별 Solar API 키를 암호화하는 서버 키입니다. 각 교사는 자료 제작 화면에서 자신의 Solar API 키를 등록합니다. **변환 시작**을 눌렀을 때 백엔드에서 Solar를 호출합니다. 모델 기본값은 Upstage 모델 ID인 `solar-pro4`입니다. 기존 `.env`에 들어 있는 `solar-pro-4`도 `solar-pro4`로 변환해서 사용합니다. [Upstage의 Solar Pro 4 매개변수 안내](https://github.com/UpstageAI/Solar-Pro4-Cookbook/tree/main/capabilities/parameters)
+
+변환 작업에 실패한 쪽 번호가 나타나면 시작 쪽과 마지막 쪽에 그 번호를 넣어 한 쪽만 변환해 보세요. 토큰 한도로 같은 쪽이 반복해서 실패하면 글이 더 짧은 원본으로 확인하고, JSON이나 문단 검증 오류가 반복되면 변환 작업에 표시된 문구와 쪽 번호를 공유해 주세요. 백엔드 로그에는 작업 ID, 오류 코드, 쪽 번호가 기록됩니다.
 
 이미 MariaDB 전용 계정을 만들었다면 아래 **PDF 제작 권한**을 추가합니다. DB 모드의 원본 업로드는 기본적으로 저장소의 `.ganada-files/`에 저장됩니다. 다른 경로를 써야 한다면 `GANADA_DB_FILES_DIR`을 설정하고, 예시 PDF도 기존 `seed/` 상대 경로에 배치합니다.
 

@@ -3,7 +3,6 @@
 from functools import partial
 import logging
 
-from pydantic import ValidationError
 from starlette.concurrency import run_in_threadpool
 
 from app.core.access import active_student_membership, require_active_teacher
@@ -64,6 +63,7 @@ async def run_jobs(app, job_ids):
                 continue
             if not job:
                 continue
+            page = None
             try:
                 key, source, pages = await storage(_prepare, store, job, database)
                 call = partial(solar.complete_json, key, job["model"])
@@ -71,13 +71,14 @@ async def run_jobs(app, job_ids):
                 await storage(_commit, store, job, result, database)
                 continue
             except APIError as error:
-                code = error.code if error.code in solar.ERROR_MESSAGES or error.code == "DATABASE_UNAVAILABLE" else "SOURCE_CHANGED"
-            except ValidationError:
-                code = "SOLAR_OUTPUT_INVALID"
+                code = error.code if error.code in solar.ERROR_MESSAGES else "SOURCE_CHANGED"
+                if isinstance(error.details, dict):
+                    page = error.details.get("page")
+                logger.warning("PDF job %s failed (%s, page=%s)", job_id, code, page)
             except Exception as error:
                 logger.error("PDF job %s failed (%s)", job_id, type(error).__name__)
                 code = "GENERATION_FAILED"
             try:
-                await storage(jobs.failed, store, job_id, code, database)
+                await storage(jobs.failed, store, job_id, code, database, page)
             except APIError:
                 logger.warning("Could not record the outcome of PDF job %s", job_id)

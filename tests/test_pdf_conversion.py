@@ -1,13 +1,20 @@
 """Exercise teacher PDF generation without contacting Upstage."""
 
-from pathlib import Path
+from io import BytesIO
+import json
 import os
+from pathlib import Path
 
 from cryptography.fernet import Fernet
 from fastapi.testclient import TestClient
+import httpx
+from pypdf import PdfReader, PdfWriter
 import pytest
 
+from app.core.errors import APIError
 from app.generation import solar
+from app.generation.dto import PdfBlock, PdfPage
+from app.generation.prompts import convert_pdf
 from app.main import create_app
 
 
@@ -20,13 +27,14 @@ from app.main import create_app
 def test_pdf_conversion_review_and_publishing(database, monkeypatch, tmp_path):
     if not database:
         monkeypatch.delenv("GANADA_DB_HOST", raising=False)
+    monkeypatch.delenv("GANADA_SOLAR_MODEL", raising=False)
     monkeypatch.setenv("GANADA_SOLAR_ENCRYPTION_KEY", Fernet.generate_key().decode())
     monkeypatch.setenv("GANADA_DB_FILES_DIR", str(tmp_path))
     calls = []
     secret = "not-a-live-key-abcd"
 
     def fake_solar(api_key, model, instructions, data):
-        assert api_key == secret and model == "solar-pro-4"
+        assert api_key == secret and model == "solar-pro4"
         assert "수식" in instructions
         calls.append(data)
         return {
@@ -39,7 +47,14 @@ def test_pdf_conversion_review_and_publishing(database, monkeypatch, tmp_path):
         }
 
     monkeypatch.setattr(solar, "complete_json", fake_solar)
-    pdf = (Path(__file__).resolve().parents[1] / "app/fixtures/sample.pdf").read_bytes()
+    sample = Path(__file__).resolve().parents[1] / "app/fixtures/sample.pdf"
+    sample_page = PdfReader(sample).pages[0]
+    upload_pdf = PdfWriter()
+    upload_pdf.add_page(sample_page)
+    upload_pdf.add_page(sample_page)
+    binary = BytesIO()
+    upload_pdf.write(binary)
+    pdf = binary.getvalue()
     student_login = {"loginId": "s_b", "password": "mock-pass-123", "role": "student"}
     request_headers = {"Idempotency-Key": "same-generation"}
 
@@ -58,7 +73,7 @@ def test_pdf_conversion_review_and_publishing(database, monkeypatch, tmp_path):
             "file": ("source.pdf", pdf, "application/pdf"),
         }).raise_for_status().json()
         assert teacher.get(f"/files/{source['fileId']}/download").raise_for_status().content == pdf
-        assert teacher.get(f"/sources/{source['id']}/pdf-info").raise_for_status().json()["pageCount"] == 1
+        assert teacher.get(f"/sources/{source['id']}/pdf-info").raise_for_status().json()["pageCount"] == 2
 
         job_body = {
             "sourceId": source["id"], "studentMemberIds": [student_id], "operation": "convert",
@@ -82,6 +97,19 @@ def test_pdf_conversion_review_and_publishing(database, monkeypatch, tmp_path):
         changed = {**job_body, "pages": [{"number": 1, "blocks": [{"id": "p1b1", "text": "다른 자료"}]}]}
         assert teacher.post(endpoint, headers=request_headers, json=changed).status_code == 409
         assert len(calls) == 1
+
+        def truncate_second_page(_key, _model, _instructions, data):
+            assert data["page"] == 2
+            raise APIError(502, "SOLAR_OUTPUT_TRUNCATED", solar.ERROR_MESSAGES["SOLAR_OUTPUT_TRUNCATED"])
+
+        monkeypatch.setattr(solar, "complete_json", truncate_second_page)
+        failing_body = {**job_body, "pages": [{"number": 2, "blocks": [{"id": "p2b1", "text": "두 번째 쪽"}]}]}
+        queued = teacher.post(endpoint, headers={"Idempotency-Key": "failing-page"}, json=failing_body)
+        failed_id = queued.raise_for_status().json()["items"][0]["id"]
+        failed = teacher.get(f"/generation-jobs/{failed_id}").raise_for_status().json()
+        assert failed["status"] == "failed" and failed["resultId"] is None
+        assert failed["errorCode"] == "SOLAR_OUTPUT_TRUNCATED"
+        assert failed["errorMessage"].startswith("2쪽 · ")
 
         path = f"/materials/{job['resultId']}"
         original = teacher.get(path).raise_for_status()
@@ -114,33 +142,73 @@ def test_pdf_conversion_review_and_publishing(database, monkeypatch, tmp_path):
         assert visible["originalContent"] is None
 
 
+def _mock_upstage(monkeypatch, *, finish_reason, content):
+    requests = []
+    client = httpx.Client
+
+    def respond(request):
+        requests.append(request)
+        return httpx.Response(200, json={"choices": [{
+            "finish_reason": finish_reason, "message": {"content": content},
+        }]})
+
+    def client_factory(**kwargs):
+        return client(transport=httpx.MockTransport(respond), **kwargs)
+
+    monkeypatch.setattr(httpx, "Client", client_factory)
+    return requests
+
+
 def test_solar_wire_contract_without_network(monkeypatch):
-    import json
-    import httpx
+    monkeypatch.setenv("GANADA_SOLAR_MODEL", "solar-pro-4")
+    assert solar.model_name() == "solar-pro4"
+    text = '분석 결과입니다.\n```json\n{"blocks":[],"terms":{}}\n```'
+    requests = _mock_upstage(monkeypatch, finish_reason="stop", content=text)
 
-    class ClientFactory:
-        def __init__(self):
-            self.actual_client = httpx.Client
-            self.seen = False
+    # Queued jobs from the previous version may still have the old model ID.
+    result = solar.complete_json("not-a-live-key", "solar-pro-4", "변환 지시", {"blocks": []})
+    assert result == {"blocks": [], "terms": {}}
+    request, = requests
+    assert str(request.url) == solar.SOLAR_URL
+    assert request.headers["Authorization"] == "Bearer not-a-live-key"
+    body = json.loads(request.content)
+    assert (body["model"], body["reasoning_effort"], body["max_tokens"]) == ("solar-pro4", "low", 16_384)
+    assert body["messages"][0]["role"] == "system"
+    assert json.loads(body["messages"][1]["content"]) == {"blocks": []}
 
-        def respond(self, request):
-            assert str(request.url) == solar.SOLAR_URL
-            assert request.headers["Authorization"] == "Bearer not-a-live-key"
-            body = json.loads(request.content)
-            assert body["model"] == "solar-pro-4"
-            assert body["messages"][0]["role"] == "system"
-            assert json.loads(body["messages"][1]["content"]) == {"blocks": []}
-            self.seen = True
-            return httpx.Response(200, json={"choices": [{
-                "finish_reason": "stop", "message": {"content": '{"blocks":[],"terms":{}}'},
-            }]})
 
-        def __call__(self, **kwargs):
-            return self.actual_client(transport=httpx.MockTransport(self.respond), **kwargs)
+@pytest.mark.parametrize(("reason", "content", "code"), [
+    ("length", "", "SOLAR_OUTPUT_TRUNCATED"),
+    ("content_filter", None, "SOLAR_OUTPUT_FILTERED"),
+    ("stop", None, "SOLAR_OUTPUT_EMPTY"),
+    ("stop", '{"blocks": [', "SOLAR_OUTPUT_JSON_INVALID"),
+])
+def test_solar_distinguishes_completion_failures(monkeypatch, reason, content, code):
+    _mock_upstage(monkeypatch, finish_reason=reason, content=content)
+    with pytest.raises(APIError) as error:
+        solar.complete_json("not-a-live-key", solar.DEFAULT_MODEL, "변환 지시", {})
+    assert error.value.code == code
 
-    factory = ClientFactory()
-    monkeypatch.setattr(httpx, "Client", factory)
-    assert solar.complete_json("not-a-live-key", solar.DEFAULT_MODEL, "변환 지시", {"blocks": []}) == {
-        "blocks": [], "terms": {},
-    }
-    assert factory.seen
+
+@pytest.mark.parametrize(("row_ids", "audience", "expected_code"), [
+    (["p2b2", "p2b1"], "student", None),
+    (["p2b1", "p2b1"], "student", "SOLAR_OUTPUT_BLOCKS"),
+    (["p2b1", "p2b2"], "unknown", "SOLAR_OUTPUT_SCHEMA"),
+])
+def test_solar_pdf_keeps_source_order_and_validates_classification(row_ids, audience, expected_code):
+    def analyze(_instructions, _request):
+        return {"blocks": [{"id": row_id, "role": "body", "audience": audience} for row_id in row_ids]}
+
+    page = PdfPage(number=2, blocks=[
+        PdfBlock(id="p2b1", text="첫 문단입니다."), PdfBlock(id="p2b2", text="두 번째 문단입니다."),
+    ])
+    source = {"subject": "math", "unit": "비와 비율"}
+    learner = {"level": "intermediate", "nativeLanguage": "vi"}
+    if expected_code is None:
+        result = convert_pdf(analyze, source, learner, [page])
+        assert [row.id for row in result.paragraphs] == ["p2b1", "p2b2"]
+    else:
+        with pytest.raises(APIError) as error:
+            convert_pdf(analyze, source, learner, [page])
+        assert error.value.code == expected_code
+        assert error.value.details == {"page": 2}

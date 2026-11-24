@@ -9,6 +9,7 @@ export type PdfSourceOut = Omit<SourceOut, 'unit'> & {
   unit: string;
   fileId: string | null;
   sourceText: string;
+  sentences: { id: string; text: string }[];
 };
 
 export type StudentTarget = {

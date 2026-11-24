@@ -1,6 +1,6 @@
 """Teacher entry points for PDF reconstruction jobs and their Solar key."""
 
-from typing import Annotated
+from typing import Annotated, Literal
 
 from fastapi import APIRouter, BackgroundTasks, Header, Request
 
@@ -12,12 +12,15 @@ from app.diagnostic.service import completed_results
 from app.mariadb.files import read_source_file
 from app.materials.pdf import extract_pdf_pages
 from app.materials.service import require_file, require_source
+from app.quizzes import jobs as quiz_jobs
+from app.quizzes.dto import QuizGenerate, QuizJobOut
+from app.quizzes.router import list_quiz_jobs, start_quiz_jobs
 
 from . import credentials, jobs, solar
 from .dto import CredentialCreate, CredentialOut, Generate, JobOut
 from .worker import run_jobs
 
-router = APIRouter(tags=["PDF 자료 제작"])
+router = APIRouter(tags=["AI 생성 작업"])
 
 
 @router.get("/ai-credentials", response_model=Page[CredentialOut])
@@ -32,12 +35,14 @@ def register_credential(body: CredentialCreate, request: Request, store: Store):
     return credentials.register(store, teacher["id"], body)
 
 
-@router.post("/classes/{classId}/generation-jobs", status_code=202, response_model=Page[JobOut])
+@router.post("/classes/{classId}/generation-jobs", status_code=202, response_model=Page[JobOut | QuizJobOut])
 def start_jobs(
-    classId: str, body: Generate, request: Request, store: Store, background_tasks: BackgroundTasks,
+    classId: str, body: Generate | QuizGenerate, request: Request, store: Store, background_tasks: BackgroundTasks,
     request_key: Annotated[str | None, Header(alias="Idempotency-Key")] = None,
 ):
     teacher = auth(request, "teacher")
+    if isinstance(body, QuizGenerate):
+        return start_quiz_jobs(classId, body, request, store, background_tasks, request_key, teacher)
     batch_key, digest = jobs.request_keys(body, request_key)
     source = require_source(store, teacher, body.sourceId)
     if source["classId"] != classId or not source["fileId"]:
@@ -80,18 +85,24 @@ def start_jobs(
     return {"items": [jobs.public(job) for job in batch]}
 
 
-@router.get("/classes/{classId}/generation-jobs", response_model=Page[JobOut])
-def list_jobs(classId: str, request: Request, store: Store):
+@router.get("/classes/{classId}/generation-jobs", response_model=Page[JobOut | QuizJobOut])
+def list_jobs(classId: str, request: Request, store: Store, operation: Literal["convert", "generate_quiz"] = "convert"):
     teacher = auth(request, "teacher")
     membership(store, teacher, classId, "teacher")
+    if operation == "generate_quiz":
+        return list_quiz_jobs(classId, store, teacher)
     return {"items": [jobs.public(job) for job in jobs.list_owned(store, teacher["id"], classId)]}
 
 
-@router.get("/generation-jobs/{jobId}", response_model=JobOut)
+@router.get("/generation-jobs/{jobId}", response_model=JobOut | QuizJobOut)
 def job_detail(jobId: str, request: Request, store: Store):
     teacher = auth(request, "teacher")
     job = jobs.get(store, jobId)
+    output = jobs.public
+    if job is None:
+        job = quiz_jobs.get(store, jobId)
+        output = quiz_jobs.public
     if not job or job["createdBy"] != teacher["id"]:
         fail(404, "NOT_FOUND", "생성 작업을 찾을 수 없습니다.")
     membership(store, teacher, job["classId"], "teacher")
-    return jobs.public(job)
+    return output(job)

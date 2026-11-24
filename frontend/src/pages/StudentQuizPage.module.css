@@ -1,0 +1,22 @@
+.card { display: grid; gap: var(--space-l); padding: var(--space-xl); border-radius: var(--radius-main); background: var(--color-surface); box-shadow: var(--shadow-soft); }
+.head { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: var(--space-m); }
+.head b { font-size: var(--font-size-card-title); }
+.passage { display: grid; gap: var(--space-s); max-height: 18rem; overflow: auto; padding: var(--space-m); border-radius: var(--radius-nav); background: var(--color-background); line-height: 1.7; }
+.passage p { margin: 0; }
+.prompt { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-s); margin: 0; font-size: var(--font-size-card-title); font-weight: var(--font-weight-bold); line-height: 1.5; }
+.choices { display: grid; gap: var(--space-s); }
+.choices button { display: flex; align-items: flex-start; gap: var(--space-m); padding: var(--space-m); border: 1px solid var(--color-border); border-radius: var(--radius-nav); background: var(--color-surface); color: var(--color-text); font: inherit; font-size: var(--font-size-body); text-align: left; cursor: pointer; }
+.choices button span { font-weight: var(--font-weight-bold); color: var(--color-text-sub); }
+.choices .picked { border: 2px solid var(--color-primary); background: var(--color-card-red); }
+.actions { display: flex; justify-content: flex-end; gap: var(--space-s); }
+.score { margin: 0; font-size: var(--font-size-card-title); }
+.score b { font-size: var(--font-size-big-number); }
+.wrong { display: grid; gap: var(--space-m); margin: 0; padding: 0; list-style: none; }
+.wrong li { display: grid; gap: var(--space-s); padding-bottom: var(--space-m); border-bottom: 1px solid var(--color-line); }
+.wrongHead { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-s); }
+.wrongHead > span { margin-right: auto; }
+.explain { display: grid; gap: var(--space-s); padding: var(--space-m); border-radius: var(--radius-nav); background: var(--color-background); }
+.explain p { margin: 0; line-height: 1.6; }
+.highlight { padding: var(--space-s); border-radius: var(--radius-nav); background: var(--color-card-yellow); }
+.muted { color: var(--color-text-sub); }
+.alert { color: var(--color-primary); }

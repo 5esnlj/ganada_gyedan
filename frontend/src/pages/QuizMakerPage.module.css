@@ -1,0 +1,16 @@
+.tabs { display: flex; flex-wrap: wrap; gap: var(--space-xs); }
+.layout { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 3fr); gap: var(--space-l); align-items: start; }
+.selectedRow { background: var(--color-card-red); }
+.rowButton { padding: 0; border: 0; background: none; color: inherit; font: inherit; font-weight: var(--font-weight-bold); cursor: pointer; }
+.plan, .result { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-s); margin: 0; color: var(--color-text-sub); }
+.plan em, .result em { font-style: normal; color: var(--color-title-yellow); }
+.pager { display: flex; align-items: center; gap: var(--space-s); }
+.pager b { font-size: var(--font-size-body); }
+.tags { display: flex; gap: var(--space-xs); margin-left: auto; }
+.prompt { margin: 0; font-size: var(--font-size-card-title); font-weight: var(--font-weight-bold); line-height: 1.5; }
+.choices { display: grid; gap: var(--space-xs); margin: 0; padding-left: var(--space-l); }
+.choices li { padding: var(--space-s); border-radius: var(--radius-nav); }
+.correct { background: var(--color-card-green); font-weight: var(--font-weight-bold); }
+.source { margin: 0; padding: var(--space-s); border-radius: var(--radius-nav); background: var(--color-background); color: var(--color-text-sub); font-size: var(--font-size-small); }
+.editChoice { display: grid !important; grid-template-columns: auto auto minmax(0, 1fr); align-items: center; gap: var(--space-s); }
+@media (max-width: 1200px) { .layout { grid-template-columns: minmax(0, 1fr); } }

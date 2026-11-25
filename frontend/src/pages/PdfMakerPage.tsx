@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
-import { Download, FileText } from 'lucide-react';
+import { FileText } from 'lucide-react';
 import { ApiError, SUBJECT_LABELS } from '../api';
 import {
   pdfMakerApi, type GenerationJob, type MaterialContent, type PdfSourceOut,
@@ -9,8 +9,9 @@ import type { AreaCode } from '../api/wire';
 import { Button, LevelPill, MaterialCard, PageHeader, UploadBox } from '../components';
 import { useApi } from '../hooks';
 import {
-  exportPreviewPdf, openSourcePdf, renderConvertedPages, toConversionPages, type PdfPage, type PdfSource,
+  openSourcePdf, toConversionPages, type PdfSource,
 } from '../pdf';
+import { hasPositionedParagraphs, PdfComparison } from './PdfComparison';
 import styles from './PdfMakerPage.module.css';
 import { errorMessage, Failure, languageLabel, LEVEL_LABELS, Panel, SolarKey, useAction } from './teacherWorkspace';
 
@@ -331,65 +332,6 @@ function useReviewPages(pdf: PdfSource | null, content: MaterialContent) {
   return useApi(async () => pdf ? pdf.readPages(from, to) : [], [pdf, from, to]);
 }
 
-function PdfComparison({ originals, content, canDownload, title }: {
-  originals: PdfPage[];
-  content: MaterialContent;
-  canDownload: boolean;
-  title: string;
-}) {
-  const [current, setCurrent] = useState(originals[0]?.number ?? 1);
-  const { data: preview, error: previewError, retry } = useApi(() => renderConvertedPages(originals, {
-    ...content,
-    paragraphs: content.paragraphs.map((paragraph) => ({ ...paragraph, page: paragraph.page ?? originals[0].number })),
-    hiddenBlockIds: content.hiddenBlockIds ?? [],
-  }), [originals, content]);
-  const original = originals.find((page) => page.number === current) ?? originals[0];
-  const converted = preview?.pages.find((page) => page.number === original.number);
-  const { busy, error, run } = useAction();
-
-  function download() {
-    if (!preview) return;
-    void run(async () => {
-      const url = URL.createObjectURL(await exportPreviewPdf(preview, content));
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = `${title}-전환자료.pdf`;
-      document.body.appendChild(link);
-      link.click();
-      link.remove();
-      window.setTimeout(() => URL.revokeObjectURL(url), 1000);
-    });
-  }
-
-  return (
-    <Panel title="원본과 전환본 비교">
-      <div className={styles.row}>
-        <label>미리보기 쪽 <select value={original.number} onChange={(event) => setCurrent(Number(event.target.value))}>
-          {originals.map((page) => <option key={page.number} value={page.number}>{page.number}쪽</option>)}
-        </select></label>
-        <Button variant="secondary" icon={<Download size={18} />} disabled={!canDownload || !preview?.pages.length || busy} onClick={download}
-          title={!canDownload ? '전환 자료를 검토한 뒤 PDF를 저장할 수 있습니다.' : undefined}>
-          {busy ? 'PDF 만드는 중…' : '전환본 PDF 내려받기'}
-        </Button>
-      </div>
-      <div className={styles.compare}>
-        <figure>
-          <figcaption>원본 {original.number}쪽</figcaption>
-          <img src={original.imageUrl} alt={`원본 PDF ${original.number}쪽`} />
-        </figure>
-        <figure>
-          <figcaption>전환본 {original.number}쪽</figcaption>
-          {converted ? <img src={converted.imageUrl} alt={`전환 PDF ${original.number}쪽`} />
-            : preview ? <p>이 쪽의 전환본을 표시할 수 없습니다.</p>
-              : previewError ? <Failure message={previewError.message} retry={retry} /> : <p role="status">미리보기를 만드는 중…</p>}
-        </figure>
-      </div>
-      {preview?.notices.length ? <ul className={styles.notices}>{preview.notices.map((notice, index) => <li key={index}>{notice}</li>)}</ul> : null}
-      {Boolean(error) && <Failure message={errorMessage(error)} />}
-    </Panel>
-  );
-}
-
 function EditionEditor({ source, initial, initialVersion, onReload }: {
   source: PdfSourceOut;
   initial: StudentEdition;
@@ -399,26 +341,36 @@ function EditionEditor({ source, initial, initialVersion, onReload }: {
   const [edition, setEdition] = useState(initial);
   const [version, setVersion] = useState(initialVersion);
   const [edited, setEdited] = useState<MaterialContent>(initial.content);
+  const [editingOnPage, setEditingOnPage] = useState(false);
   const original = useSourcePdf(source.fileId);
   const pages = useReviewPages(original.pdf, edition.content);
   const { busy, error, run } = useAction();
   const dirty = edited.paragraphs.some((paragraph, index) => paragraph.text !== edition.content.paragraphs[index].text);
   const editable = edition.status === 'draft' || edition.status === 'reviewed';
   const allTextValid = edited.paragraphs.every((paragraph) => paragraph.text.trim());
+  const positioned = pages.data ? hasPositionedParagraphs(pages.data, edition.content) : null;
+  const showTextEditor = !source.fileId || Boolean(original.error || pages.error)
+    || positioned === false;
 
   function changeParagraph(id: string, text: string) {
     setEdited((content) => ({ ...content, paragraphs: content.paragraphs.map((p) => p.id === id ? { ...p, text } : p) }));
   }
 
-  function update(action: 'edit' | 'review' | 'publish') {
+  async function saveContent(content: MaterialContent) {
+    const result = await pdfMakerApi.edit(edition.id, content, version);
+    accept(result);
+  }
+
+  function accept(result: Awaited<ReturnType<typeof pdfMakerApi.edit>>) {
+    if (!result.etag) throw new Error('다음 편집에 필요한 자료 버전을 받지 못했습니다.');
+    setEdition(result.data);
+    setVersion(result.etag);
+    setEdited(result.data.content);
+  }
+
+  function update(action: 'review' | 'publish') {
     void run(async () => {
-      const result = action === 'edit'
-        ? await pdfMakerApi.edit(edition.id, edited, version)
-        : await pdfMakerApi.transition(edition.id, action, version);
-      if (!result.etag) throw new Error('다음 편집에 필요한 자료 버전을 받지 못했습니다.');
-      setEdition(result.data);
-      setVersion(result.etag);
-      setEdited(result.data.content);
+      accept(await pdfMakerApi.transition(edition.id, action, version));
     });
   }
 
@@ -429,14 +381,14 @@ function EditionEditor({ source, initial, initialVersion, onReload }: {
         : original.error ? <Failure message={original.error} retry={original.retry} />
         : pages.error ? <Failure message={pages.error.message} retry={pages.retry} />
         : pages.data?.length ? <PdfComparison originals={pages.data} content={edition.content} title={edition.title}
-          canDownload={!dirty && (edition.status === 'reviewed' || edition.status === 'published')} />
+          canEdit={editable && !busy} onEditingChange={setEditingOnPage} onSave={saveContent} onReload={onReload}
+          canDownload={!dirty && !editingOnPage && !busy && (edition.status === 'reviewed' || edition.status === 'published')} />
         : <p role="status">PDF 원본을 불러오는 중…</p>}
       <details className={styles.details}>
         <summary><FileText size={18} aria-hidden="true" /> 원본 추출 텍스트</summary>
         <p>{edition.originalContent || source.sourceText || '추출한 텍스트가 없습니다.'}</p>
       </details>
-      <Panel title="전환 본문">
-        {dirty && <p className={styles.muted}>수정 내용을 저장하면 PDF 미리보기가 갱신됩니다.</p>}
+      {showTextEditor && <Panel title="전환 본문">
         <div className={styles.form}>
           {edited.paragraphs.map((paragraph, index) => (
             <label key={paragraph.id}>
@@ -446,14 +398,19 @@ function EditionEditor({ source, initial, initialVersion, onReload }: {
             </label>
           ))}
         </div>
-        {Boolean(error) && <Failure message={errorMessage(error)}
-          retry={error instanceof ApiError && error.status === 412 ? onReload : undefined} />}
+        {editable && <div className={styles.actions}>
+          <Button variant="secondary" disabled={busy || !dirty || !allTextValid}
+            onClick={() => void run(() => saveContent(edited))}>수정 저장</Button>
+        </div>}
+      </Panel>}
+      {Boolean(error) && <Failure message={errorMessage(error)}
+        retry={error instanceof ApiError && error.status === 412 ? onReload : undefined} />}
+      {editable && (
         <div className={styles.actions}>
-          {editable && <Button variant="secondary" disabled={busy || !dirty || !allTextValid} onClick={() => update('edit')}>수정 저장</Button>}
-          {edition.status === 'draft' && <Button disabled={busy || dirty} onClick={() => update('review')}>검토 완료</Button>}
-          {edition.status === 'reviewed' && <Button disabled={busy || dirty} onClick={() => update('publish')}>학생에게 배포</Button>}
+          {edition.status === 'draft' && <Button disabled={busy || dirty || editingOnPage} onClick={() => update('review')}>검토 완료</Button>}
+          {edition.status === 'reviewed' && <Button disabled={busy || dirty || editingOnPage} onClick={() => update('publish')}>학생에게 배포</Button>}
         </div>
-      </Panel>
+      )}
       {(edited.translations.length > 0 || Boolean(edited.studyNotes?.length)) && (
         <Panel title="학습 보조 내용">
           {edited.translations.length > 0 && (

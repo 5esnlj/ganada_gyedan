@@ -217,6 +217,57 @@
   box-shadow: var(--shadow-page);
 }
 
+.editablePage {
+  position: relative;
+  min-width: 0;
+}
+
+.paragraphTarget {
+  position: absolute;
+  min-width: var(--space-s);
+  min-height: var(--space-s);
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-nav);
+  background: transparent;
+  cursor: text;
+}
+
+.paragraphTarget:hover:not(:disabled),
+.paragraphTarget:focus-visible,
+.paragraphTarget[aria-expanded='true'] {
+  outline: 2px solid var(--color-primary);
+  background: color-mix(in srgb, var(--color-primary) 10%, transparent);
+}
+
+.inlineEditor {
+  position: absolute;
+  z-index: 2;
+  inset-inline: var(--space-s);
+  display: grid;
+  gap: var(--space-s);
+  padding: var(--space-m);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-nav);
+  background: var(--color-surface);
+  box-shadow: var(--shadow-soft);
+  transform: translateY(var(--space-xs));
+}
+
+.inlineEditor[data-place='above'] {
+  transform: translateY(calc(-100% - var(--space-xs)));
+}
+
+.inlineEditor label {
+  display: grid;
+  gap: var(--space-xs);
+}
+
+.inlineEditor textarea {
+  width: 100%;
+  box-sizing: border-box;
+}
+
 .notices,
 .note {
   margin: 0;

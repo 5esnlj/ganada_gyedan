@@ -18,6 +18,17 @@ from app.generation.prompts import convert_pdf
 from app.main import create_app
 
 
+def _sample_pdf(page_count):
+    sample = Path(__file__).resolve().parents[1] / "app/fixtures/sample.pdf"
+    sample_page = PdfReader(sample).pages[0]
+    writer = PdfWriter()
+    for _ in range(page_count):
+        writer.add_page(sample_page)
+    with BytesIO() as output:
+        writer.write(output)
+        return output.getvalue()
+
+
 @pytest.mark.parametrize("database", [
     False,
     pytest.param(True, marks=pytest.mark.skipif(
@@ -48,14 +59,7 @@ def test_pdf_conversion_review_and_publishing(database, monkeypatch, tmp_path):
         }
 
     monkeypatch.setattr(solar, "complete_json", fake_solar)
-    sample = Path(__file__).resolve().parents[1] / "app/fixtures/sample.pdf"
-    sample_page = PdfReader(sample).pages[0]
-    upload_pdf = PdfWriter()
-    upload_pdf.add_page(sample_page)
-    upload_pdf.add_page(sample_page)
-    binary = BytesIO()
-    upload_pdf.write(binary)
-    pdf = binary.getvalue()
+    pdf = _sample_pdf(2)
     student_login = {"loginId": "s_b", "password": "mock-pass-123", "role": "student"}
     request_headers = {"Idempotency-Key": "same-generation"}
 
@@ -294,3 +298,221 @@ def test_pdf_recovers_missing_classification_without_revealing_known_teacher_con
     assert len(requests) == 2
     assert result.limitedSupportPages == [2] and result.hiddenBlockIds == ["p2b2"]
     assert [row.id for row in result.paragraphs] == ["p2b1"]
+
+
+def test_four_page_pdf_recovers_only_failed_pages_and_keeps_valid_support(monkeypatch):
+    monkeypatch.delenv("GANADA_DB_HOST", raising=False)
+    monkeypatch.delenv("GANADA_SOLAR_MODEL", raising=False)
+    monkeypatch.setenv("GANADA_SOLAR_ENCRYPTION_KEY", Fernet.generate_key().decode())
+    calls = []
+    api_key = "not-a-live-key-four-pages"
+
+    def respond(request):
+        assert str(request.url) == solar.SOLAR_URL
+        assert request.headers["Authorization"] == f"Bearer {api_key}"
+        payload = json.loads(request.content)
+        data = json.loads(payload["messages"][1]["content"])
+        page = data["page"]
+        is_primary = "learner" in data
+        calls.append((page, is_primary))
+        rows = [
+            {"id": block["id"], "role": "body", "audience": "student"}
+            for block in data["blocks"]
+        ]
+        terms = {}
+        if page == 1 and is_primary:
+            content = '{"blocks":[{"id":"p1b1","audience":'
+        else:
+            if page == 1:
+                rows[1]["audience"] = "teacher"
+            elif page == 2 and is_primary:
+                rows[0].update(
+                    hard=[{"from": "검증", "easy": "확인", "tier": "2-3"}],
+                    visual={"kind": "invalid", "items": [1, 2]},
+                )
+                rows[1]["audience"] = "teacher"
+                rows.pop()
+            elif page == 3:
+                rows[0]["terms"] = ["단위"]
+                terms = {"단위": {"easy": "재는 데 쓰는 기준", "translation": "đơn vị"}}
+            elif page == 4:
+                rows[0]["visual"] = {"kind": "seq", "title": "비교 순서", "items": ["비교", "정리"]}
+                rows[1]["hard"] = [{"from": "그림 안내", "easy": "문장이 바뀜", "tier": "1"}]
+            content = json.dumps({"blocks": rows, "terms": terms}, ensure_ascii=False)
+
+        return httpx.Response(200, json={"choices": [{
+            "finish_reason": "stop", "message": {"content": content},
+        }]})
+
+    client = httpx.Client
+    monkeypatch.setattr(
+        httpx, "Client", lambda **kwargs: client(transport=httpx.MockTransport(respond), **kwargs)
+    )
+    job_pages = [
+        {"number": 1, "blocks": [
+            {"id": "p1b1", "text": "자료를 검토해 주세요."},
+            {"id": "p1b2", "text": "검토자에게 전달할 참고 내용입니다."},
+        ]},
+        {"number": 2, "blocks": [
+            {"id": "p2b1", "text": "교과 자료를 검증한다."},
+            {"id": "p2b2", "text": "문제와 함께 검토할 지도 메모입니다."},
+            {"id": "p2b3", "text": "자료를 읽으세요."},
+        ]},
+        {"number": 3, "blocks": [{"id": "p3b1", "text": "이 자료의 단위를 확인합니다."}]},
+        {"number": 4, "blocks": [
+            {"id": "p4b1", "text": "서로 비교하고 결과를 정리합니다."},
+            {"id": "p4b2", "text": "그림 안내", "preserve": True},
+        ]},
+    ]
+
+    with TestClient(create_app(), base_url="http://testserver/api/v1") as teacher:
+        login = teacher.post("/auth/login", json={
+            "loginId": "t_math", "password": "mock-pass-123", "role": "teacher",
+        }).raise_for_status()
+        teacher.headers["X-CSRF-Token"] = login.json()["csrfToken"]
+        teacher.post("/ai-credentials", json={"apiKey": api_key}).raise_for_status()
+        source = teacher.post("/classes/cls_1/sources/pdf", data={"title": "4쪽 자료"}, files={
+            "file": ("study.pdf", _sample_pdf(4), "application/pdf"),
+        }).raise_for_status().json()
+        request_body = {
+            "sourceId": source["id"], "studentMemberIds": ["mem_s_b"], "operation": "convert",
+            "pages": job_pages,
+        }
+        headers = {"Idempotency-Key": "four-page-recovery"}
+        created = teacher.post("/classes/cls_1/generation-jobs", headers=headers, json=request_body)
+        assert created.status_code == 202, created.text
+        job_id = created.json()["items"][0]["id"]
+        job = teacher.get(f"/generation-jobs/{job_id}").raise_for_status().json()
+        assert job["status"] == "succeeded", job
+        material = teacher.get(f"/materials/{job['resultId']}").raise_for_status().json()
+        assert material["status"] == "draft"
+        content = material["content"]
+
+        replay = teacher.post("/classes/cls_1/generation-jobs", headers=headers, json=request_body)
+        assert replay.raise_for_status().json()["items"][0]["id"] == job_id
+
+    assert calls == [(1, True), (1, False), (2, True), (2, False), (3, True), (4, True)]
+    assert content["limitedSupportPages"] == [1, 2]
+    assert content["omittedPages"] == []
+    assert content["hiddenBlockIds"] == ["p1b2", "p2b2"]
+    assert [(row["id"], row["page"], row["text"]) for row in content["paragraphs"]] == [
+        ("p1b1", 1, "자료를 검토해 주세요."),
+        ("p2b1", 2, "교과 자료를 확인한다."),
+        ("p2b3", 2, "자료를 읽으세요."),
+        ("p3b1", 3, "이 자료의 단위를 확인합니다."),
+        ("p4b1", 4, "서로 비교하고 결과를 정리합니다."),
+        ("p4b2", 4, "그림 안내"),
+    ]
+    assert content["translations"] == [
+        {"term": "단위", "meaning": "재는 데 쓰는 기준", "translation": "đơn vị", "language": "vi"},
+    ]
+    assert [note["blockId"] for note in content["studyNotes"]] == ["p4b1"]
+    assert content["studyNotes"][0]["visual"]["items"] == ["비교", "정리"]
+
+
+@pytest.mark.parametrize("code", [
+    "SOLAR_OUTPUT_TRUNCATED", "SOLAR_OUTPUT_JSON_INVALID", "SOLAR_OUTPUT_EMPTY", "SOLAR_RESPONSE_INVALID",
+])
+def test_pdf_retries_bad_completion_once_and_reports_page_if_recovery_fails(code):
+    page = PdfPage(number=3, blocks=[PdfBlock(id="p3b1", text="세 번째 쪽입니다.")])
+    calls = []
+
+    def analyze(_instructions, data):
+        calls.append(data["page"])
+        raise APIError(502, code, solar.ERROR_MESSAGES[code])
+
+    with pytest.raises(APIError) as error:
+        convert_pdf(analyze, {"subject": "math", "unit": ""},
+                    {"level": "intermediate", "nativeLanguage": "vi"}, [page])
+    assert calls == [3, 3]
+    assert error.value.code == code
+    assert error.value.details["page"] == 3
+
+
+@pytest.mark.parametrize("code", ["SOLAR_READ_TIMEOUT", "SOLAR_CONNECT_TIMEOUT", "SOLAR_OUTPUT_FILTERED"])
+def test_pdf_does_not_retry_timeout_or_content_filter(code):
+    page = PdfPage(number=3, blocks=[PdfBlock(id="p3b1", text="세 번째 쪽입니다.")])
+    calls = []
+
+    def analyze(_instructions, data):
+        calls.append(data["page"])
+        raise APIError(502, code, solar.ERROR_MESSAGES[code])
+
+    with pytest.raises(APIError) as error:
+        convert_pdf(analyze, {"subject": "math", "unit": ""},
+                    {"level": "intermediate", "nativeLanguage": "vi"}, [page])
+    assert calls == [3]
+    assert error.value.code == code
+    assert error.value.details["page"] == 3
+
+
+@pytest.mark.parametrize(("glossary", "translation", "limited"), [
+    pytest.param([{"term": "비율", "meaning": "두 양을 비교한 값", "translation": "tỉ lệ"}], "tỉ lệ", [],
+                 id="explicit-term-and-meaning-alias"),
+    pytest.param({"비율": "두 양을 비교한 값"}, "", [], id="keyed-string-definition"),
+    pytest.param({"비율": {"easy": "두 양을 비교한 값", "translation": ["tỉ lệ"]}}, "", [1],
+                 id="keep-definition-with-invalid-translation"),
+])
+def test_pdf_accepts_keyed_blocks_and_glossary_shorthand(monkeypatch, glossary, translation, limited):
+    completion = {
+        "blocks": {
+            "p1b2": {"role": "body", "audience": "student"},
+            "p1b1": {"role": "body", "audience": "student", "terms": "비율",
+                     "hard": [{"from": "검증", "easy": "확인", "tier": "2-3"}]},
+        },
+        "terms": glossary,
+    }
+    requests = _mock_upstage(monkeypatch, content=json.dumps(completion, ensure_ascii=False))
+    page = PdfPage(number=1, blocks=[
+        PdfBlock(id="p1b1", text="비율을 검증합니다."),
+        PdfBlock(id="p1b2", text="두 수를 비교합니다."),
+    ])
+
+    def analyze(instructions, data):
+        return solar.complete_json("not-a-live-key", solar.DEFAULT_MODEL, instructions, data, for_pdf=True)
+
+    result = convert_pdf(analyze, {"subject": "math", "unit": "비와 비율"},
+                         {"level": "beginner", "nativeLanguage": "vi"}, [page])
+
+    assert len(requests) == 1
+    assert result.limitedSupportPages == limited
+    assert [(row.id, row.text) for row in result.paragraphs] == [
+        ("p1b1", "비율을 확인합니다."),
+        ("p1b2", "두 수를 비교합니다."),
+    ]
+    assert result.translations == [
+        {"term": "비율", "meaning": "두 양을 비교한 값", "translation": translation, "language": "vi"},
+    ]
+
+
+def test_pdf_key_and_internal_id_conflict_only_reuses_unambiguous_rows():
+    page = PdfPage(number=1, blocks=[
+        PdfBlock(id="p1b1", text="비율을 검증합니다."),
+        PdfBlock(id="p1b2", text="다른 값도 검증합니다."),
+    ])
+    requests = []
+
+    def analyze(instructions, request):
+        requests.append(request)
+        if len(requests) == 1:
+            return {
+                "blocks": {
+                    "p1b1": {"id": "p1b2", "role": "body", "audience": "student", "terms": "비율",
+                             "hard": [{"from": "검증", "easy": "확인", "tier": "2-3"}]},
+                    "p1b2": {"role": "body", "audience": "student",
+                             "hard": [{"from": "다른 값", "easy": "다른 수", "tier": "2-3"}]},
+                },
+                "terms": {"비율": "두 양을 비교한 값"},
+            }
+        assert "분류" in instructions
+        assert set(request) == {"page", "subject", "unit", "blocks"}
+        return {"blocks": [
+            {"id": block["id"], "role": "body", "audience": "student"} for block in request["blocks"]
+        ]}
+
+    result = convert_pdf(analyze, {"subject": "math", "unit": "비와 비율"},
+                         {"level": "beginner", "nativeLanguage": "vi"}, [page])
+
+    assert len(requests) == 2 and result.limitedSupportPages == [1]
+    assert [row.text for row in result.paragraphs] == ["비율을 검증합니다.", "다른 수도 검증합니다."]
+    assert not result.translations

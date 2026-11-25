@@ -98,20 +98,26 @@ def _load_learning_content(cursor, store):
             "content": json.loads(row["converted_content"]),
         }
 
-    cursor.execute("SELECT * FROM quizzes")
+    cursor.execute("""SELECT q.*, a.profile_snapshot FROM quizzes q LEFT JOIN ai_requests a ON a.id=q.ai_request_id
+                      AND a.operation='generate_quiz' AND a.prompt_version='check-quiz-v1'""")
     for row in cursor:
         key = str(row["id"])
+        snapshot = json.loads(row["profile_snapshot"]) if row["profile_snapshot"] else {}
         store.quizzes[key] = _assignment(store, row) | {
             "id": key, "title": row["title"], "generationNo": row["generation_no"],
             "questionType": row["question_type"], "inputMaterialId": _id(row["student_material_id"]), "questions": [],
+            "generation": snapshot.get("quizGeneration"), "approvedSentenceIds": snapshot.get("approvedSentenceIds"),
         }
     cursor.execute("SELECT * FROM quiz_questions ORDER BY quiz_id, position")
     for row in cursor:
-        store.quizzes[str(row["quiz_id"])]["questions"].append({
+        quiz = store.quizzes[str(row["quiz_id"])]
+        plan = (quiz["generation"] or {}).get("plan", [])
+        slot = plan[row["position"] - 1] if row["position"] <= len(plan) else {}
+        quiz["questions"].append({
             "id": str(row["id"]), "position": row["position"], "questionType": row["question_type"],
             "prompt": row["prompt"], "choices": json.loads(row["choices"]), "correctOptionId": row["correct_option_id"],
             "explanation": row["explanation"], "sourceSentenceIds": json.loads(row["source_sentence_ids"]),
-            "maxPoints": float(row["max_points"]),
+            "maxPoints": float(row["max_points"]), **slot,
         })
     cursor.execute("SELECT * FROM quiz_answer_attempts ORDER BY quiz_id, question_id, attempt_no")
     for row in cursor:

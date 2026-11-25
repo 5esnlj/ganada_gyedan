@@ -5,6 +5,8 @@ import { AppShell, Button, Sidebar, TopBar, type NavKey } from './components';
 import { useApi } from './hooks';
 import { DiagnosticPage, DiagnosticResultPage } from './pages/DiagnosticPage';
 import { PdfMakerPage } from './pages/PdfMakerPage';
+import { QuizMakerPage } from './pages/QuizMakerPage';
+import { StudentQuizPage } from './pages/StudentQuizPage';
 import { StudentDashboard } from './pages/StudentDashboard';
 import { TeacherDashboard } from './pages/TeacherDashboard';
 import type { Role } from './types';
@@ -99,11 +101,14 @@ function Workspace({ session, currentClass, controls }: { session: SessionOut; c
     setNav('materials');
   };
   const { data, error, retry } = useApi(async () => teacher ? { kind: 'teacher' as const, value: await api.getClassDashboard(currentClass.id) } : { kind: 'student' as const, value: await api.getStudentHome(currentClass.id, area) }, [currentClass.id, teacher, area]);
-  const bottom = data?.kind === 'teacher' ? <div className={styles.pending}><small>검토 기다리는 문항 묶음</small><b>{data.value.pendingReviewCount}건</b><small>검토 화면은 다음 개발 단계입니다.</small></div> : data?.kind === 'student' ? <div className={styles.myLevel}><small>내 수준 · {data.value.subject}</small>{(['listening', 'reading'] as const).map((skill) => <div key={skill}><span><b>{skill === 'listening' ? '듣기' : '읽기'}</b><em>{data.value.myLevel[skill] ?? '진단 미완료'}</em></span><small>{data.value.myLevel[`${skill}Score`] ?? '–'} / 100점</small></div>)}</div> : undefined;
-  return <AppShell topBar={<TopBar userName={session.user.displayName} onLogoClick={() => navigate('dashboard')} />} sidebar={<Sidebar role={session.user.role} className={currentClass.name} active={nav} onNavigate={navigate} onCta={teacher ? openPdfUpload : undefined} enabledKeys={teacher ? ['dashboard', 'materials'] : ['dashboard', 'diagnosis']} bottom={bottom} />}>
+  const bottom = data?.kind === 'teacher' ? <div className={styles.pending}><small>검토 기다리는 문항 묶음</small><b>{data.value.pendingReviewCount}건</b></div> : data?.kind === 'student' ? <div className={styles.myLevel}><small>내 수준 · {data.value.subject}</small>{(['listening', 'reading'] as const).map((skill) => <div key={skill}><span><b>{skill === 'listening' ? '듣기' : '읽기'}</b><em>{data.value.myLevel[skill] ?? '진단 미완료'}</em></span><small>{data.value.myLevel[`${skill}Score`] ?? '–'} / 100점</small></div>)}</div> : undefined;
+  return <AppShell topBar={<TopBar userName={session.user.displayName} onLogoClick={() => navigate('dashboard')} />} sidebar={<Sidebar role={session.user.role} className={currentClass.name} active={nav} onNavigate={navigate} onCta={teacher ? openPdfUpload : () => navigate('questions')} enabledKeys={teacher ? ['dashboard', 'materials', 'questions'] : ['dashboard', 'questions', 'diagnosis']} bottom={bottom} />}>
     {controls}
     {!teacher && nav === 'dashboard' && <label className={styles.areaSelect}>진단 수준을 볼 영역 <select value={area} onChange={(e) => setArea(e.target.value as AreaCode)}>{Object.entries(SUBJECT_LABELS).map(([code, label]) => <option key={code} value={code}>{label}</option>)}</select></label>}
     {!teacher && nav === 'diagnosis' ? <DiagnosticResultPage />
+      : !teacher && nav === 'questions' ? <StudentQuizPage classId={currentClass.id} />
+      : teacher && nav === 'questions' && currentClass.teacherSubject
+        ? <QuizMakerPage classId={currentClass.id} subject={currentClass.teacherSubject} />
       : teacher && nav === 'materials' && currentClass.teacherSubject
         ? <PdfMakerPage classId={currentClass.id} subject={currentClass.teacherSubject} openUploadRequest={uploadRequest} />
       : error ? <div role="alert"><p>{error.message}</p><Button onClick={retry}>다시 불러오기</Button></div>

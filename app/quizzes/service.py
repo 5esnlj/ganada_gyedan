@@ -30,6 +30,7 @@ from .dto import (
     TeacherQuiz,
     WrongQuestion,
 )
+from .generation import adjustment_for, first_attempts, quiz_history
 
 SUBJECT_ORDER = ("korean", "math", "social", "science", "daily")
 
@@ -80,8 +81,15 @@ def visible_quizzes(
 def _passage(state: MemoryStore, quiz: Record) -> Passage:
     input_id = quiz.get("inputMaterialId")
     if input_id:
-        return Passage.model_validate(state.materials[input_id]["content"])
-    return Passage(paragraphs=state.sources[quiz["sourceId"]]["sentences"])
+        content = state.materials[input_id]["content"]
+        hidden = set(content.get("hiddenBlockIds", []))
+        paragraphs = [row for row in content["paragraphs"] if row["id"] not in hidden]
+        return Passage(paragraphs=paragraphs, translations=content.get("translations", []))
+    sentences = state.sources[quiz["sourceId"]]["sentences"]
+    if quiz.get("approvedSentenceIds") is not None:
+        approved = set(quiz["approvedSentenceIds"])
+        sentences = [row for row in sentences if row["id"] in approved]
+    return Passage(paragraphs=sentences)
 
 
 def quiz_results(state: MemoryStore, quiz: Record) -> ScoreResults:
@@ -122,6 +130,7 @@ def quiz_results(state: MemoryStore, quiz: Record) -> ScoreResults:
         unansweredQuestionCount=len(questions) - len(first),
         retryCounts=retry_counts,
         wrongQuestions=wrong,
+        answeredQuestionIds=[q["id"] for q in questions if attempts.get(q["id"])],
     )
 
 
@@ -140,7 +149,18 @@ def quiz_output(state: MemoryStore, quiz: Record, user: Record) -> StudentQuiz |
     # Construct the student DTO from an allowlist. A teacher payload is never reused.
     question_count = len(quiz["questions"])
     if user["role"] == "teacher":
-        return TeacherQuiz.model_validate({**quiz, "questionCount": question_count})
+        firsts = first_attempts(state, quiz)
+        generation = quiz.get("generation")
+        if generation:
+            generation = generation | {"nextAdjustment": adjustment_for(quiz_history(state, quiz))}
+        return TeacherQuiz.model_validate({
+            **quiz,
+            "questionCount": question_count,
+            "questions": [q | {"firstAttemptCorrect": first} for q, first in zip(quiz["questions"], firsts)],
+            "generation": generation,
+            "progress": quiz_results(state, quiz),
+            "passage": _passage(state, quiz),
+        })
     summary = QuizSummary.model_validate({**quiz, "questionCount": question_count})
     return StudentQuiz(
         **summary.model_dump(),
@@ -163,6 +183,7 @@ def _validate_question(body: QuestionPatch, kind: Kind, sentence_ids: set[str]) 
     if (
         len(body.choices) != expected_count
         or len(choice_ids) != expected_count
+        or len({option.text.strip() for option in body.choices}) != expected_count
         or body.correctOptionId not in choice_ids
         or not sentence_ids.issuperset(body.sourceSentenceIds)
         or len(set(body.sourceSentenceIds)) != len(body.sourceSentenceIds)
@@ -196,6 +217,7 @@ def create_quiz_draft(state: MemoryStore, teacher: Record, body: QuizDraft) -> R
         "sourceId": body.sourceId,
         "studentMemberId": body.studentMemberId,
         "inputMaterialId": body.inputMaterialId,
+        "approvedSentenceIds": body.approvedSentenceIds,
         "subject": source["subject"],
     }
     if body.inputMaterialId is not None:
@@ -207,6 +229,8 @@ def create_quiz_draft(state: MemoryStore, teacher: Record, body: QuizDraft) -> R
 
     passage = _passage(state, quiz)
     sentence_ids = {paragraph.id for paragraph in passage.paragraphs}
+    if body.approvedSentenceIds is not None and set(body.approvedSentenceIds) != sentence_ids:
+        fail(422, "QUESTION_INVALID", "원본 지문의 문장 선택을 다시 확인하세요.")
     for question in body.questions:
         _validate_question(question, body.questionType, sentence_ids)
     max_generation = max(
@@ -228,6 +252,7 @@ def create_quiz_draft(state: MemoryStore, teacher: Record, body: QuizDraft) -> R
             separators=(",", ":"),
         )
         if body.inputMaterialId
+        else "\n".join(p.text for p in passage.paragraphs) if body.approvedSentenceIds is not None
         else source["sourceText"]
     )
     quiz.update(

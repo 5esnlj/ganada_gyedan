@@ -140,6 +140,8 @@ def test_pdf_conversion_review_and_publishing(database, monkeypatch, tmp_path):
         }}).raise_for_status()
         assert teacher.post(path + "/review", headers={"If-Match": first_tag}).status_code == 412
         reviewed = teacher.post(path + "/review", headers={"If-Match": patched.headers["etag"]}).raise_for_status()
+        assert teacher.post(path + "/publish", headers={"If-Match": reviewed.headers["etag"]}).status_code == 409
+        assert teacher.get(path).raise_for_status().json()["status"] == "reviewed"
         assert teacher.post(path + "/publish", headers={"If-Match": reviewed.headers["etag"]},
                             files={"file": ("bad.pdf", b"invalid", "application/pdf")}).status_code == 415
         assert teacher.get(path).raise_for_status().json()["status"] == "reviewed"
@@ -305,12 +307,15 @@ def test_pdf_recovers_missing_classification_without_revealing_known_teacher_con
         requests.append(data)
         if len(requests) == 1:
             return {"blocks": [{"id": "p2b2", "role": "body", "audience": " 교사용 "}]}
+        if "context" in data:
+            assert [block["id"] for block in data["blocks"]] == ["p2b2"]
+            return {"blocks": [{"id": "p2b2", "audience": "teacher", "evidence": "지도 메모"}]}
         assert "분류" in instructions and "learner" not in data
         return {"blocks": [{"id": block["id"], "role": "body", "audience": "student"} for block in data["blocks"]]}
 
     result = convert_pdf(analyze, {"subject": "korean", "unit": "한글"},
                          {"level": "intermediate", "nativeLanguage": "vi"}, [page])
-    assert len(requests) == 2
+    assert len(requests) == 3
     assert result.limitedSupportPages == [2] and result.hiddenBlockIds == ["p2b2"]
     assert [row.id for row in result.paragraphs] == ["p2b1"]
 
@@ -329,7 +334,7 @@ def test_four_page_pdf_recovers_only_failed_pages_and_keeps_valid_support(monkey
         data = json.loads(payload["messages"][1]["content"])
         page = data["page"]
         is_primary = "learner" in data
-        calls.append((page, is_primary))
+        calls.append((page, "confirm" if "context" in data else "primary" if is_primary else "fallback"))
         rows = [
             {"id": block["id"], "role": "body", "audience": "student"}
             for block in data["blocks"]
@@ -338,7 +343,10 @@ def test_four_page_pdf_recovers_only_failed_pages_and_keeps_valid_support(monkey
         if page == 1 and is_primary:
             content = '{"blocks":[{"id":"p1b1","audience":'
         else:
-            if page == 1:
+            if "context" in data:
+                assert page == 2 and [row["id"] for row in rows] == ["p2b2"]
+                rows[0].update(audience="teacher", evidence="지도 메모")
+            elif page == 1:
                 rows[1]["audience"] = "teacher"
             elif page == 2 and is_primary:
                 rows[0].update(
@@ -366,7 +374,7 @@ def test_four_page_pdf_recovers_only_failed_pages_and_keeps_valid_support(monkey
     job_pages = [
         {"number": 1, "blocks": [
             {"id": "p1b1", "text": "자료를 검토해 주세요."},
-            {"id": "p1b2", "text": "검토자에게 전달할 참고 내용입니다."},
+            {"id": "p1b2", "text": "교사용 참고: 검토자에게 전달할 내용입니다."},
         ]},
         {"number": 2, "blocks": [
             {"id": "p2b1", "text": "교과 자료를 검증한다."},
@@ -406,7 +414,10 @@ def test_four_page_pdf_recovers_only_failed_pages_and_keeps_valid_support(monkey
         replay = teacher.post("/classes/cls_1/generation-jobs", headers=headers, json=request_body)
         assert replay.raise_for_status().json()["items"][0]["id"] == job_id
 
-    assert calls == [(1, True), (1, False), (2, True), (2, False), (3, True), (4, True)]
+    assert calls == [
+        (1, "primary"), (1, "fallback"), (2, "primary"), (2, "fallback"), (2, "confirm"),
+        (3, "primary"), (4, "primary"),
+    ]
     assert content["limitedSupportPages"] == [1, 2]
     assert content["omittedPages"] == []
     assert content["hiddenBlockIds"] == ["p1b2", "p2b2"]
@@ -554,3 +565,103 @@ def test_pdf_tracks_only_contextual_phrase_changes_and_preserves_quoted_text():
     assert [change.original for change in paragraph.phraseChanges] == ["발음 기관", "관찰합니다"]
     for change in paragraph.phraseChanges:
         assert paragraph.text[change.start:change.start + len(change.replacement)] == change.replacement
+
+
+def test_pdf_protects_layout_and_confirms_only_plausible_teacher_blocks():
+    page = PdfPage(number=4, blocks=[
+        PdfBlock(id="p4b1", text="114"),
+        PdfBlock(id="p4b2", text="그림 2 자음 기관"),
+        PdfBlock(id="p4b3", text="표 1 소리의 특징"),
+        PdfBlock(id="p4b4", text="어떤 차이가 있는지 설명해 보세요."),
+        PdfBlock(id="p4b5", text="말소리의 원리를 검증합니다.", layout="text"),
+        PdfBlock(id="p4b6", text="교사용 참고: 발음 예시", layout="margin"),
+        PdfBlock(id="p4b7", text="화살표", layout="image", preserve=True),
+        PdfBlock(id="p4b8", text="활동 과정에서 찾은 규칙을 검증합니다.", layout="text"),
+        PdfBlock(id="p4b9", text="① 예시 답안 문장입니다.", layout="text"),
+        PdfBlock(id="p4b10", text="표 2 예시 답안 기록", layout="structure"),
+        PdfBlock(id="p4b11", text="② 서로 닮은 소리", layout="text"),
+        PdfBlock(id="p4b12", text="빈칸에 알맞은 문장을 써 보세요.", layout="text"),
+    ])
+    requests = []
+
+    def analyze(instructions, request):
+        requests.append(request)
+        if "learner" not in request:
+            assert "실제로 교사에게만" in instructions
+            assert [row["id"] for row in request["blocks"]] == ["p4b5", "p4b9", "p4b10"]
+            assert all("audience" not in row for row in request["context"])
+            return {"blocks": [
+                {"id": "p4b5", "audience": "student"},
+                {"id": "p4b9", "audience": "teacher", "evidence": "예시 답안"},
+                {"id": "p4b10", "audience": "teacher", "evidence": "예시 답안"},
+            ]}
+
+        preserve = {row["id"] for row in request["blocks"] if row["preserve"]}
+        assert {"p4b1", "p4b2", "p4b3", "p4b7"} <= preserve
+        assert "p4b8" not in preserve and "p4b12" not in preserve
+        assert request["blocks"][6]["layout"] == "image"
+        return {"blocks": [
+            {"id": block.id, "role": "body",
+             "audience": "student" if block.id in {"p4b6", "p4b8", "p4b11", "p4b12"} else "teacher",
+             "hard": [
+                 {"from": "검증", "easy": "확인", "tier": "2-3"},
+                 {"from": "닮은", "easy": "비슷한", "tier": "2-3"},
+                 {"from": "알맞은", "easy": "맞는", "tier": "2-3"},
+             ]}
+            for block in page.blocks
+        ]}
+
+    result = convert_pdf(analyze, {"subject": "korean", "unit": "한글"},
+                         {"level": "beginner", "nativeLanguage": "vi"}, [page])
+
+    assert len(requests) == 2
+    assert result.hiddenBlockIds == ["p4b6", "p4b9", "p4b10"]
+    assert result.limitedSupportPages == [4]
+    text_by_id = {row.id: row.text for row in result.paragraphs}
+    assert text_by_id == {
+        "p4b1": "114", "p4b2": "그림 2 자음 기관", "p4b3": "표 1 소리의 특징",
+        "p4b4": "어떤 차이가 있는지 설명해 보세요.", "p4b5": "말소리의 원리를 검증합니다.",
+        "p4b7": "화살표", "p4b8": "활동 과정에서 찾은 규칙을 확인합니다.",
+        "p4b11": "② 서로 닮은 소리", "p4b12": "빈칸에 맞는 문장을 써 보세요.",
+    }
+
+
+@pytest.mark.parametrize(("audience", "evidence"), [
+    ("uncertain", None),
+    ("teacher", None),
+    ("teacher", "나타냅니다"),
+    ("teacher", "실제로 적혀 있지 않은 교사용 정답"),
+])
+def test_pdf_refuses_uncertain_teacher_confirmation(audience, evidence):
+    page = PdfPage(number=2, blocks=[
+        PdfBlock(id="p2b1", text="말소리의 원리를 나타냅니다.", layout="text"),
+    ])
+    requests = []
+
+    def analyze(_instructions, data):
+        requests.append(data)
+        if "learner" in data:
+            return {"blocks": [{"id": "p2b1", "role": "body", "audience": "teacher"}]}
+        return {"blocks": [{"id": "p2b1", "audience": audience, "evidence": evidence}]}
+
+    with pytest.raises(APIError) as error:
+        convert_pdf(analyze, {"subject": "korean", "unit": "한글"},
+                    {"level": "beginner", "nativeLanguage": "vi"}, [page])
+    assert len(requests) == 2
+    assert error.value.code == "SOLAR_AUDIENCE_UNCERTAIN"
+    assert error.value.details["page"] == 2
+
+
+def test_pdf_explicit_teacher_label_in_protected_geometry_fails_closed():
+    page = PdfPage(number=2, blocks=[
+        PdfBlock(id="p2b1", text="교사용 정답: 가나다", layout="image", preserve=True),
+    ])
+
+    def analyze(_instructions, _data):
+        return {"blocks": [{"id": "p2b1", "role": "caption", "audience": "student"}]}
+
+    with pytest.raises(APIError) as error:
+        convert_pdf(analyze, {"subject": "korean", "unit": "한글"},
+                    {"level": "beginner", "nativeLanguage": "vi"}, [page])
+    assert error.value.code == "SOLAR_AUDIENCE_UNCERTAIN"
+    assert error.value.details["page"] == 2

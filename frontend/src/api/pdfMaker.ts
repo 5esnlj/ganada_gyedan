@@ -1,9 +1,11 @@
 import { config } from '../config';
 import { ApiError, request, requestWithMeta } from './client';
 import type { AreaCode, DiagnosticState, ListOut, MaterialOut, MaterialParagraph, PartResult, SourceOut } from './wire';
+import type { ConversionPage } from '../pdf/types';
 
 const classPath = (classId: string) => `/classes/${encodeURIComponent(classId)}`;
 const materialPath = (materialId: string) => `/materials/${encodeURIComponent(materialId)}`;
+const MAX_CONVERTED_PDF_BYTES = 20 * 1024 * 1024;
 
 export type PdfSourceOut = Omit<SourceOut, 'unit'> & {
   unit: string;
@@ -36,11 +38,6 @@ export type GenerationJob = {
   resultId: string | null;
   errorCode: string | null;
   errorMessage: string | null;
-};
-
-export type ConversionPage = {
-  number: number;
-  blocks: { id: string; text: string; preserve: boolean }[];
 };
 
 export type MaterialContent = {
@@ -117,6 +114,9 @@ export const pdfMakerApi = {
       method: 'POST', headers: { 'If-Match': version },
     }),
   publishPdf: (materialId: string, pdf: Blob, version: string) => {
+    if (pdf.size > MAX_CONVERTED_PDF_BYTES) {
+      throw new Error('배포용 PDF가 20 MiB를 넘습니다. 원본으로 돌아가 변환할 쪽 범위를 나눠 주세요.');
+    }
     const body = new FormData();
     body.set('file', pdf, 'converted.pdf');
     return requestWithMeta<StudentEdition>(`${materialPath(materialId)}/publish`, {

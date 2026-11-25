@@ -10,6 +10,12 @@ export interface Box {
 export type Rgb = [number, number, number];
 export type FontFamily = 'sans' | 'serif' | 'hand' | 'round';
 export type TextRect = [x: number, y: number, width: number, fontSize: number];
+export type PdfBlockLayout = 'text' | 'structure' | 'image' | 'margin';
+
+export interface PdfProtectedRegion extends Box {
+  kind: 'image' | 'rule' | 'structure' | 'margin' | 'badge';
+  blockId?: string;
+}
 
 export interface PdfBlock {
   id: string;
@@ -31,6 +37,10 @@ export interface PdfBlock {
   room: number;
   inner: boolean;
   wrap?: { x: number; y: number; y1: number };
+  layout?: PdfBlockLayout;
+  container?: Box;
+  structuralRuns?: TextRect[];
+  structuralPrefix?: string;
 }
 
 export interface RenderedPage {
@@ -47,12 +57,14 @@ export interface PdfPage extends RenderedPage {
   images: Box[];
   shapes: Box[];
   boxes: Box[];
+  backgroundUrl?: string;
+  protectedRegions?: PdfProtectedRegion[];
   fallback?: string;
 }
 
 export interface ConversionPage {
   number: number;
-  blocks: { id: string; text: string; preserve: boolean }[];
+  blocks: { id: string; text: string; preserve: boolean; layout?: PdfBlockLayout }[];
 }
 
 export interface ConvertedPdfContent {

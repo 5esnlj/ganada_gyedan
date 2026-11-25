@@ -171,6 +171,8 @@ def _transition(
     check_version(request, record)
     expected = record["version"]
     pdf = None
+    if target == "published" and file is None and record["content"].get("hiddenBlockIds"):
+        fail(409, "REDACTED_PDF_REQUIRED", "교사용 문단을 가린 전환 PDF를 확인한 뒤 함께 배포해 주세요.")
     if file is not None:
         pdf = file.file.read(MAX_CONVERTED_PDF_BYTES + 1)
         validate_converted_pdf(pdf)

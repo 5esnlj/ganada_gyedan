@@ -1,6 +1,9 @@
 import type { ConversionPage, PdfPage, PdfSource } from './types';
 
-export type { ConversionPage, ConvertedPdfContent, PdfBlock, PdfHelpContent, PdfPage, PdfPreview, PdfSource } from './types';
+export type {
+  ConversionPage, ConvertedPdfContent, PdfBlock, PdfBlockLayout, PdfHelpContent,
+  PdfPage, PdfPreview, PdfProtectedRegion, PdfSource,
+} from './types';
 export { canEditPdfBlock, exportPreviewPdf, renderConvertedPages } from './render';
 
 export async function openSourcePdf(file: Blob): Promise<PdfSource> {
@@ -11,6 +14,6 @@ export async function openSourcePdf(file: Blob): Promise<PdfSource> {
 export function toConversionPages(pages: readonly PdfPage[]): ConversionPage[] {
   return pages.map(page => ({
     number: page.number,
-    blocks: page.fallback ? [] : page.blocks.map(({ id, text, preserve }) => ({ id, text, preserve })),
+    blocks: page.fallback ? [] : page.blocks.map(({ id, text, preserve, layout }) => ({ id, text, preserve, layout })),
   }));
 }

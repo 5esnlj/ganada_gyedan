@@ -1,7 +1,7 @@
 import { AnnotationMode, OPS, Util } from 'pdfjs-dist';
 import type { PageViewport, PDFPageProxy } from 'pdfjs-dist';
 import { rgb } from './raster';
-import type { Box, FontFamily, PdfBlock, PdfPage, Rgb, TextRect } from './types';
+import type { Box, FontFamily, PdfBlock, PdfPage, PdfProtectedRegion, Rgb, TextRect } from './types';
 
 export interface TextRun {
   text: string;
@@ -19,6 +19,7 @@ export interface TextRun {
 
 export interface Shape extends Box {
   segments: number;
+  closed: boolean;
 }
 
 export const runRect = (run: TextRun): TextRect => [run.x, run.y, run.width, run.size];
@@ -43,11 +44,15 @@ export const boxContains = (box: Box, block: PdfBlock) =>
   within(box, block.x + block.width / 2, block.y + block.height / 2);
 
 // PDF.js 6 packs the path operations with a bounding box on the paint operator.
-function countPathSegments(path: ArrayLike<number>): number {
+function pathShape(path: ArrayLike<number>) {
   const lengths = [3, 3, 7, 5, 1]; // move, line, cubic, quadratic, close
-  let count = 0;
-  for (let i = 0; i < path.length; i += lengths[path[i]] ?? path.length) count++;
-  return count;
+  let segments = 0;
+  let closed = false;
+  for (let i = 0; i < path.length; i += lengths[path[i]] ?? path.length) {
+    segments++;
+    closed ||= path[i] === 4;
+  }
+  return { segments, closed };
 }
 
 export async function analyzeShapes(page: PDFPageProxy, viewport: PageViewport) {
@@ -58,6 +63,7 @@ export async function analyzeShapes(page: PDFPageProxy, viewport: PageViewport) 
   const matrices: number[][] = [];
   const images: Box[] = [];
   const shapes: Shape[] = [];
+  let textClipping = false;
   let current = [1, 0, 0, 1, 0, 0];
   const toBox = (bounds: ArrayLike<number>, matrix = current): Box => {
     const result = [Infinity, Infinity, -Infinity, -Infinity];
@@ -88,10 +94,16 @@ export async function analyzeShapes(page: PDFPageProxy, viewport: PageViewport) 
       current = matrices.pop() ?? current;
     } else if (operation === OPS.transform) {
       current = Util.transform(current, args);
+    } else if (operation === OPS.setTextRenderingMode && (args[0] & 4)) {
+      textClipping = true;
     } else if (operation === OPS.constructPath) {
       const [paint, data, bounds] = args;
       const path = data?.[0] as ArrayLike<number> | null;
-      if (paint !== OPS.endPath && path && bounds) shapes.push({ ...toBox(bounds), segments: countPathSegments(path) });
+      if (paint !== OPS.endPath && path && bounds) {
+        const shape = pathShape(path);
+        if (paint === OPS.fill || paint === OPS.eoFill) shape.closed = true;
+        shapes.push({ ...toBox(bounds), ...shape });
+      }
     } else if (imageOps.has(operation)) {
       images.push(toBox([0, 0, 1, 1]));
     } else if (operation === OPS.paintImageXObjectRepeat) {
@@ -112,6 +124,7 @@ export async function analyzeShapes(page: PDFPageProxy, viewport: PageViewport) 
     images: images.filter(box => areaOf(box) > area * 0.004 && areaOf(box) < area * 0.85),
     shapes: shapes.filter(box => box.x1 > box.x - 0.01 && box.y1 > box.y - 0.01),
     area,
+    textClipping,
   };
 }
 
@@ -341,6 +354,116 @@ export function toBlocks(items: TextRun[], images: Box[], shapes: Box[]): (PdfBl
       room: 0, inner: false,
     };
   }).filter(block => block.text);
+}
+
+const marker = /^(?:[0-9]{1,4}[.)]?|[①-⑳❶-❿➊-➓]|[•·▪◦○●■□▶◆◇※]+)$/u;
+const sectionLabel = /^(?:처음|가운데|끝|시작|중간|마지막|본문|결론|항목|구분|번호|순서|단계)$/u;
+const textBounds = ([x, y, w, fs]: TextRect): Box => ({ x, y, x1: x + w, y1: y + fs });
+const containsBounds = (box: Box, inner: Box, tolerance = 0) =>
+  inner.x >= box.x - tolerance && inner.x1 <= box.x1 + tolerance &&
+  inner.y >= box.y - tolerance && inner.y1 <= box.y1 + tolerance;
+const inflate = (box: Box, amount: number): Box =>
+  ({ x: box.x - amount, y: box.y - amount, x1: box.x1 + amount, y1: box.y1 + amount });
+
+function badgeFor(rect: TextRect, shapes: Shape[]): Shape | undefined {
+  const [, , , size] = rect;
+  const bounds = textBounds(rect);
+  return shapes.find(shape => {
+    const width = shape.x1 - shape.x;
+    const height = shape.y1 - shape.y;
+    return shape.closed && width >= size * 0.6 && width <= size * 2.3 &&
+      height >= size * 0.6 && height <= size * 2.3 && containsBounds(shape, bounds, 1);
+  });
+}
+
+function keepLeadingBadge(block: PdfBlock, shapes: Shape[]): Shape | undefined {
+  const prefix = /^(\S+)\s+/u.exec(block.text);
+  const [first, ...body] = block.runs;
+  if (!prefix || !marker.test(prefix[1]) || !first || !body.length || first[2] > first[3] * 1.3) return;
+  const badge = badgeFor(first, shapes);
+  if (!badge || body[0][0] < badge.x1 - 1) return;
+
+  const left = Math.min(...body.map(run => run[0]));
+  const right = Math.max(...body.map(run => run[0] + run[2]));
+  const firstLine = body.filter(run => Math.abs(run[1] - body[0][1]) < block.fontSize * 0.45);
+  const firstLeft = Math.min(...firstLine.map(run => run[0]));
+  const firstRight = Math.max(...firstLine.map(run => run[0] + run[2]));
+  block.lines[0] = [firstLeft, body[0][1], firstRight - firstLeft, block.lines[0][3]];
+  block.structuralRuns = [first];
+  block.structuralPrefix = prefix[1];
+  block.text = block.text.slice(prefix[0].length);
+  block.runs = body;
+  block.x = left;
+  block.width = right - left;
+  block.indent = Math.max(0, firstLeft - left);
+  return badge;
+}
+
+function cellBounds(block: PdfBlock, enclosure: Box, rules: Box[]): Box {
+  const inside = { ...enclosure };
+  const glyphs = {
+    x: block.x, x1: block.x + block.width, y: block.y, y1: block.y + block.height,
+  };
+  for (const rule of rules) {
+    if (rule.x <= glyphs.x + 0.5 && rule.x1 >= glyphs.x1 - 0.5 && rule.y1 - rule.y < 2.2) {
+      if (rule.y1 < glyphs.y) inside.y = Math.max(inside.y, rule.y1);
+      if (rule.y > glyphs.y1) inside.y1 = Math.min(inside.y1, rule.y);
+    }
+    if (rule.y <= glyphs.y + 0.5 && rule.y1 >= glyphs.y1 - 0.5 && rule.x1 - rule.x < 2.2) {
+      if (rule.x1 < glyphs.x) inside.x = Math.max(inside.x, rule.x1);
+      if (rule.x > glyphs.x1) inside.x1 = Math.min(inside.x1, rule.x);
+    }
+  }
+  return inflate(inside, -Math.max(1.5, block.fontSize * 0.12));
+}
+
+/** Classify the existing blocks without regrouping them or changing their IDs. */
+export function classifyLayout(page: PdfPage, shapes: Shape[], plainRun: (run: TextRect) => boolean) {
+  const area = page.width * page.height;
+  const enclosures = shapes.filter(shape => shape.closed && shape.segments <= 12 &&
+    shape.x1 - shape.x > 18 && shape.y1 - shape.y > 10 && areaOf(shape) < area * 0.6)
+    .sort((a, b) => areaOf(a) - areaOf(b));
+  const rules = shapes.filter(shape => {
+    const width = shape.x1 - shape.x;
+    const height = shape.y1 - shape.y;
+    return Math.min(width, height) < 2.2 && Math.max(width, height) > 20;
+  });
+  const protectedRegions: PdfProtectedRegion[] = [
+    ...page.images.map(box => ({ ...box, kind: 'image' as const })),
+    ...rules.map(box => ({ ...inflate(box, 0.65), kind: 'rule' as const })),
+  ];
+  for (const block of page.blocks) {
+    const badge = keepLeadingBadge(block, shapes);
+    if (badge) protectedRegions.push({ ...badge, kind: 'badge', blockId: block.id });
+    const enclosure = enclosures.find(box => block.runs.every(run => containsBounds(box, textBounds(run), 0.7)));
+    const number = marker.test(block.text);
+    const nearEdge = block.x < page.width * 0.1 || block.x + block.width > page.width * 0.9;
+    const margin = number && nearEdge && (block.y < page.height * 0.085 || block.y > page.height * 0.92);
+    const rowLabel = enclosure && sectionLabel.test(block.text) && enclosure.x1 - enclosure.x < page.width * 0.25;
+    if (margin || number || rowLabel) {
+      block.preserve = true;
+      block.layout = margin ? 'margin' : 'structure';
+      const markerShape = number && badgeFor(block.runs[0], shapes);
+      if (markerShape) protectedRegions.push({ ...markerShape, kind: 'badge', blockId: block.id });
+      for (const run of block.runs) {
+        protectedRegions.push({ ...textBounds(run), kind: block.layout, blockId: block.id });
+      }
+      continue;
+    }
+
+    const onImage = page.images.some(box => block.runs.some(run =>
+      within(box, run[0] + run[2] / 2, run[1] + run[3] / 2)));
+    const clean = (onImage || (block.preserve && enclosure)) && block.runs.every(plainRun);
+    if (onImage && !clean) block.preserve = true;
+    if (enclosure && clean && /\p{L}/u.test(block.text)) block.preserve = false;
+    block.layout = block.preserve ? 'image' : 'text';
+    if (block.preserve) {
+      for (const run of block.runs) protectedRegions.push({ ...textBounds(run), kind: 'image', blockId: block.id });
+    } else if (enclosure) {
+      block.container = cellBounds(block, enclosure, rules);
+    }
+  }
+  page.protectedRegions = protectedRegions;
 }
 
 // Preserve original gaps below paragraphs and the space left by wrapped text next to figures.

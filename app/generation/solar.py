@@ -40,6 +40,7 @@ ERROR_MESSAGES = {
     "SOLAR_OUTPUT_JSON_INVALID": "Solar 답변이 JSON 객체 형식에 맞지 않습니다. 이 쪽만 다시 시도해 주세요.",
     "SOLAR_OUTPUT_SCHEMA": "Solar가 문단 분류나 용어 풀이를 요청한 형식으로 반환하지 않았습니다. 이 쪽만 다시 시도해 주세요.",
     "SOLAR_OUTPUT_BLOCKS": "Solar 답변의 문단 ID가 원본과 일치하지 않습니다. 이 쪽만 다시 시도해 주세요.",
+    "SOLAR_AUDIENCE_UNCERTAIN": "학생용 본문과 교사용 내용을 확실히 구분하지 못했습니다. 원본을 확인해 주세요.",
     "GENERATION_INTERRUPTED": "생성 작업을 마치지 못했습니다. 상태를 확인한 뒤 새 요청으로 다시 시도해 주세요.",
     "DATABASE_UNAVAILABLE": "서버의 저장 연결을 확인해 주세요. 작업이 처리되었을 수 있습니다.",
     "GENERATION_FAILED": "초안을 저장하지 못했습니다. 담당 교과와 학생의 상태를 확인해 주세요.",

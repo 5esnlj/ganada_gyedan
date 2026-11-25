@@ -1,9 +1,24 @@
 from concurrent.futures import ThreadPoolExecutor
+from hashlib import sha256
+import json
 from threading import Barrier
 
 from fastapi.testclient import TestClient
 
+from app.generation.dto import Generate
+from app.generation.jobs import request_keys
 from app.main import create_app
+
+
+def test_legacy_pdf_request_keeps_its_idempotency_digest():
+    legacy = {
+        "sourceId": "src_1", "studentMemberIds": ["mem_1"], "operation": "convert",
+        "pages": [{"number": 1, "blocks": [{"id": "p1b1", "text": "자료를 읽어 보세요.", "preserve": False}]}],
+    }
+    digest = sha256(json.dumps(legacy, sort_keys=True, ensure_ascii=False).encode()).hexdigest()
+    assert request_keys(Generate.model_validate(legacy), "same-request")[1] == digest
+    legacy["pages"][0]["blocks"][0]["layout"] = "text"
+    assert request_keys(Generate.model_validate(legacy), "same-request")[1] != digest
 
 
 def test_concurrent_material_edits_with_same_etag_allow_one_update():

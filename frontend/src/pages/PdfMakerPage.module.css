@@ -224,18 +224,24 @@
 
 .paragraphTarget {
   position: absolute;
-  min-width: var(--space-s);
-  min-height: var(--space-s);
   padding: 0;
   border: 0;
-  border-radius: var(--radius-nav);
   background: transparent;
-  cursor: text;
+  pointer-events: none;
 }
 
-.paragraphTarget:hover:not(:disabled),
-.paragraphTarget:focus-visible,
-.paragraphTarget[aria-expanded='true'] {
+.paragraphLine {
+  position: absolute;
+  border-radius: 2px;
+  cursor: text;
+  pointer-events: auto;
+}
+
+.paragraphTarget:disabled .paragraphLine { pointer-events: none; }
+.paragraphTarget:focus-visible { outline: none; }
+.paragraphTarget:hover:not(:disabled) .paragraphLine,
+.paragraphTarget:focus-visible .paragraphLine,
+.paragraphTarget[aria-expanded='true'] .paragraphLine {
   outline: 2px solid var(--color-primary);
   background: color-mix(in srgb, var(--color-primary) 10%, transparent);
 }
@@ -267,6 +273,30 @@
   width: 100%;
   box-sizing: border-box;
 }
+
+.phraseList {
+  display: grid;
+  gap: var(--space-xs);
+  max-height: 13rem;
+  overflow: auto;
+  margin: var(--space-s) 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.phraseList li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-xs);
+  padding: var(--space-xs) var(--space-s);
+  border-radius: var(--radius-nav);
+  background: var(--color-background);
+  overflow-wrap: anywhere;
+}
+
+.phraseList small { color: var(--color-text-sub); }
 
 .notices,
 .note {

@@ -1,4 +1,4 @@
 {
   "compilerOptions": { "target": "ES2020", "module": "ESNext", "moduleResolution": "bundler", "strict": true, "skipLibCheck": true, "outDir": ".test-build", "rootDir": "src" },
-  "include": ["src/api/adapters.ts", "src/api/transport.ts", "src/quizzes/summary.ts", "src/vite-env.d.ts"]
+  "include": ["src/api/adapters.ts", "src/api/transport.ts", "src/pdf/phrases.ts", "src/quizzes/summary.ts", "src/vite-env.d.ts"]
 }

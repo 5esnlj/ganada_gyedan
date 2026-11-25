@@ -64,5 +64,8 @@ export type AreaResult = { area: AreaCode; score: number; maxScore: number; leve
 export type ScoreResults = { status: DiagnosticState; questionCount: number; submittedQuestionCount: number; firstCorrectCount: number | null; firstScore: number | null; currentWrongCount: number; unansweredQuestionCount: number };
 export type TeacherDashboardOut = { classId: string; className: string; selectedArea: AreaCode; teacherSubject: AreaCode; studentCount: number; levelCounts: Record<LevelCode | 'not_diagnosed', number>; pendingReviewQuizSetCount: number; students: { studentMemberId: string; displayName: string; nativeLanguage: string; diagnosticStatus: DiagnosticState; parts: PartResult[]; aggregate: AreaResult | null; latestQuiz: ScoreResults | null }[] };
 export type SourceOut = { id: string; subject: AreaCode; unit: string; title: string; createdAt: string };
+/** start is a Unicode code point offset in the converted paragraph. */
+export type PhraseChange = { start: number; original: string; replacement: string };
+export type MaterialParagraph = { id: string; text: string; page?: number | null; phraseChanges?: PhraseChange[] };
 export type MaterialOut = { id: string; subject: AreaCode; unit: string; title: string; publishedAt: string | null; createdAt: string; isRecentPublished: boolean };
 export type StudentDashboardOut = { classId: string; className: string; displayName: string; selectedArea: AreaCode; parts: PartResult[]; aggregate: AreaResult; unansweredQuestionCount: number; retryQuestionCount: number; newMaterials: MaterialOut[]; quizzes: { id: string; title: string; subject: AreaCode; progress: ScoreResults }[] };

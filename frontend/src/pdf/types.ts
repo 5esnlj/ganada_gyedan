@@ -1,3 +1,5 @@
+import type { MaterialParagraph, PhraseChange } from '../api/wire';
+
 export interface Box {
   x: number;
   y: number;
@@ -54,16 +56,24 @@ export interface ConversionPage {
 }
 
 export interface ConvertedPdfContent {
-  paragraphs: readonly { id: string; text: string; page: number | null }[];
+  paragraphs: readonly MaterialParagraph[];
   omittedPages?: readonly number[];
   limitedSupportPages?: readonly number[];
   hiddenBlockIds?: readonly string[];
+}
+
+export interface PdfPhraseResult {
+  blockId: string;
+  page: number;
+  change: PhraseChange;
+  applied: boolean;
 }
 
 export interface PdfPreview {
   pages: RenderedPage[];
   notices: string[];
   unplacedBlockIds: string[];
+  phrases: PdfPhraseResult[];
 }
 
 export interface PdfSource {

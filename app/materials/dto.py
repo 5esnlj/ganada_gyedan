@@ -50,7 +50,7 @@ class SourceOut(BaseModel):
 
 class PhraseChange(Input):
     start: int = Field(ge=0, lt=10000, description="Code point offset in the converted paragraph.")
-    original: str = Field(min_length=2, max_length=14, pattern=r"\S")
+    original: str = Field(min_length=2, max_length=200, pattern=r"\S")
     replacement: str = Field(min_length=1, max_length=200, pattern=r"\S")
 
 

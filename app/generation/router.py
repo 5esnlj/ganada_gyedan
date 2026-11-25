@@ -18,6 +18,7 @@ from app.quizzes.router import list_quiz_jobs, start_quiz_jobs
 
 from . import credentials, jobs, solar
 from .dto import CredentialCreate, CredentialOut, Generate, JobOut
+from .rubric import area_level, reading_level
 from .worker import run_jobs
 
 router = APIRouter(tags=["AI 생성 작업"])
@@ -67,15 +68,14 @@ def start_jobs(
         result = completed_results(store, student["id"])
         if result is None:
             fail(409, "STUDENT_DIAGNOSTIC_REQUIRED", "진단평가를 완료한 학생을 선택해 주세요.")
-        reading = next((p for p in result.parts if p.area == source["subject"] and p.skill == "reading"), None)
-        if reading is None:
-            fail(409, "STUDENT_DIAGNOSTIC_REQUIRED", "담당 교과의 읽기 수준이 없습니다.")
+        subject = source["subject"]
+        if not (area_level(result, subject) or reading_level(result, subject)):
+            fail(409, "STUDENT_DIAGNOSTIC_REQUIRED", "담당 교과의 진단 수준이 없습니다.")
         candidates.append({
             "classId": classId, "sourceId": body.sourceId, "studentMemberId": student_id,
             "credentialId": keys[0]["id"], "createdBy": teacher["id"], "status": "queued", "model": model,
             "snapshot": {
                 "batchKey": batch_key, "digest": digest, "pages": pages,
-                "learner": {"level": reading.level, "nativeLanguage": student["nativeLanguage"]},
                 "diagnosis": result.model_dump(mode="json") | {"nativeLanguage": student["nativeLanguage"]},
             },
         })

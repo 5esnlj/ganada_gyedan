@@ -9,10 +9,10 @@ from fastapi.testclient import TestClient
 from pypdf import PdfReader, PdfWriter
 import pytest
 
-from app.diagnostic.dto import DiagnosticResults
+from app.diagnostic.dto import AssessmentSummary, DiagnosticResults
 from app.generation import solar
 from app.main import create_app
-from app.quizzes.generation import ADJUST_DOWN, ADJUST_UP, History, diagnostic_tier, make_plan
+from app.quizzes.generation import ADJUST_DOWN, ADJUST_UP, History, diagnostic_tier, make_plan, prompt_data
 
 AREAS = ("korean", "math", "social", "science", "daily")
 PASSWORD = "mock-pass-123"
@@ -33,8 +33,25 @@ def results(levels: dict, reading: dict | None = None) -> DiagnosticResults:
 def test_base_level_is_lower_of_subject_and_subject_reading():
     levels = {"korean": "advanced", "math": "intermediate", "social": "intermediate", "science": "beginner", "daily": "beginner"}
     tier = diagnostic_tier(results(levels, {"social": "advanced", "math": "beginner"}), "social")
-    assert (tier.level, tier.daily_support) == ("intermediate", True)
+    assert (tier.level, tier.communication) == ("intermediate", "needs_improvement")
     assert diagnostic_tier(results(levels, {"math": "beginner"}), "math").level == "beginner"
+
+
+def test_quiz_uses_subject_cell_and_prefers_explicit_communication_status():
+    assessment = results(dict.fromkeys(AREAS, "beginner") | {"social": "intermediate"}, {"social": "beginner"})
+    skill = {"score": 10, "maxScore": 20, "percent": 50, "level": "intermediate"}
+    assessment.assessmentSummary = AssessmentSummary.model_validate({
+        "gradeBand": "g34", "listening": skill, "reading": skill, "subjects": [],
+        "overall": {"score": 100, "maxScore": 200, "level": "intermediate"},
+        "communication": {"score": 5, "maxScore": 10, "percent": 50, "questionCount": 10, "status": "adequate"},
+    })
+    plan = make_plan(diagnostic_tier(assessment, "social"), None)
+    payload = prompt_data("social", plan, [("s1", "재판은 갈등을 해결하는 제도입니다.")], [], "재판")
+    assert payload["student"]["baseLevel"] == "초급"
+    subject = payload["rubric"]["subjectCriterion"]
+    assert subject["grade"] == "중급" and "배경지식" in subject["guidance"]
+    assert payload["rubric"]["communicationCriterion"]["label"] == "양호"
+    assert len(payload["plan"]) == 5 and payload["challengeLevel"] == "중급"
 
 
 def test_plan_follows_criteria_and_adjusts_challenge():
@@ -118,6 +135,9 @@ def test_generate_review_publish_and_solve(teacher, monkeypatch):
     assert client.get(f"/generation-jobs/{job['id']}").raise_for_status().json()["resultId"] == job["quizId"]
     data = calls[0]
     assert data["student"]["baseLevel"] == "고급" and data["sentences"] == [{"id": "s1", "text": "쉽게 바꾼 가상 학습자료입니다."}]
+    assert data["rubric"]["subjectCriterion"]["textTreatment"] == "preserve"
+    assert "개념어" in data["rubric"]["subjectCriterion"]["guidance"]
+    assert data["rubric"]["communicationCriterion"]["label"] == "양호"
     assert [slot["category"] for slot in data["plan"]] == ["term", "relation", "application", "application", "comparison"]
 
     replay = client.post(endpoint, json=body, headers={"Idempotency-Key": "q1"}).raise_for_status().json()

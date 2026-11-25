@@ -1,6 +1,6 @@
 import { config } from '../config';
 import { ApiError, request, requestWithMeta } from './client';
-import type { AreaCode, DiagnosticState, ListOut, MaterialOut, MaterialParagraph, PartResult, SourceOut } from './wire';
+import type { AreaCode, AreaResult, DiagnosticState, ListOut, MaterialOut, MaterialParagraph, PartResult, SourceOut } from './wire';
 import type { ConversionPage } from '../pdf/types';
 
 const classPath = (classId: string) => `/classes/${encodeURIComponent(classId)}`;
@@ -20,6 +20,7 @@ export type StudentTarget = {
   nativeLanguage: string;
   diagnosticStatus: DiagnosticState;
   partResults: PartResult[];
+  areaResults: AreaResult[];
 };
 
 export type Credential = {

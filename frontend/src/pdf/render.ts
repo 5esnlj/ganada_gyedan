@@ -148,9 +148,18 @@ function hideBlocks(raster: Raster, pixels: Uint8ClampedArray, page: PdfPage, hi
   }
 }
 
+export function canEditPdfBlock(
+  page: PdfPage,
+  block: PdfBlock,
+  content: Pick<ConvertedPdfContent, 'omittedPages' | 'hiddenBlockIds'>,
+): boolean {
+  return !page.fallback && !block.preserve && /\p{L}/u.test(block.text) && !content.omittedPages?.includes(page.number)
+    && !content.hiddenBlockIds?.includes(block.id);
+}
+
 export async function renderConvertedPages(pages: readonly PdfPage[], content: ConvertedPdfContent): Promise<PdfPreview> {
   await loadPreviewFont();
-  const output: PdfPreview = { pages: [], notices: [] };
+  const output: PdfPreview = { pages: [], notices: [], unplacedBlockIds: [] };
   const paragraphs = new Map(content.paragraphs.map(paragraph => [paragraph.id, paragraph]));
   const omitted = new Set(content.omittedPages);
   const limitedSupport = new Set(content.limitedSupportPages);
@@ -170,7 +179,7 @@ export async function renderConvertedPages(pages: readonly PdfPage[], content: C
       const paragraph = paragraphs.get(block.id);
       const text = paragraph?.text.replace(/‸/g, ' ').trim();
       const sourceText = block.text.replace(/‸/g, ' ').trim();
-      if (block.preserve || hidden.has(block.id) || !text || text === sourceText || paragraph?.page !== page.number) {
+      if (!canEditPdfBlock(page, block, content) || !text || text === sourceText || paragraph?.page !== page.number) {
         return [];
       }
       return [{ block, text }];
@@ -189,7 +198,11 @@ export async function renderConvertedPages(pages: readonly PdfPage[], content: C
       for (const { block, text } of changes) {
         const overlay = fitText(context, page, block, text);
         const patches = runPatches(raster, pixels, block.runs, page.scale, false);
-        if (!overlay || !patches.length || patches.some(patch => patch === null)) { fallbacks++; continue; }
+        if (!overlay || !patches.length || patches.some(patch => patch === null)) {
+          output.unplacedBlockIds.push(block.id);
+          fallbacks++;
+          continue;
+        }
         fillPatches(context, patches.filter(patch => patch !== null));
         overlays.push({ block, overlay });
       }

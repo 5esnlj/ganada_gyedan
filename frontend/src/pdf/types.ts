@@ -63,6 +63,7 @@ export interface ConvertedPdfContent {
 export interface PdfPreview {
   pages: RenderedPage[];
   notices: string[];
+  unplacedBlockIds: string[];
 }
 
 export interface PdfSource {

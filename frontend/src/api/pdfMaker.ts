@@ -1,6 +1,6 @@
 import { config } from '../config';
 import { ApiError, request, requestWithMeta } from './client';
-import type { AreaCode, DiagnosticState, ListOut, PartResult, SourceOut } from './wire';
+import type { AreaCode, DiagnosticState, ListOut, MaterialParagraph, PartResult, SourceOut } from './wire';
 
 const classPath = (classId: string) => `/classes/${encodeURIComponent(classId)}`;
 const materialPath = (materialId: string) => `/materials/${encodeURIComponent(materialId)}`;
@@ -44,7 +44,7 @@ export type ConversionPage = {
 };
 
 export type MaterialContent = {
-  paragraphs: { id: string; text: string; page?: number | null }[];
+  paragraphs: MaterialParagraph[];
   translations: Record<string, string>[];
   omittedPages: number[];
   limitedSupportPages?: number[];

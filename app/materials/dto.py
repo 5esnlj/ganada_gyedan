@@ -48,10 +48,27 @@ class SourceOut(BaseModel):
     createdAt: str
 
 
+class PhraseChange(Input):
+    start: int = Field(ge=0, lt=10000, description="Code point offset in the converted paragraph.")
+    original: str = Field(min_length=2, max_length=14, pattern=r"\S")
+    replacement: str = Field(min_length=1, max_length=200, pattern=r"\S")
+
+
 class Paragraph(Input):
     id: str = Field(min_length=1, max_length=64, pattern=r"\S")
     text: str = Field(min_length=1, max_length=10000, pattern=r"\S")
     page: int | None = Field(default=None, ge=1, le=100)
+    phraseChanges: list[PhraseChange] = Field(default_factory=list, max_length=10)
+
+    @model_validator(mode="after")
+    def validate_phrase_offsets(self):
+        end = 0
+        for change in self.phraseChanges:
+            next_end = change.start + len(change.replacement)
+            if change.start < end or self.text[change.start:next_end] != change.replacement:
+                raise ValueError("변환 표현의 위치가 문단 본문과 일치하지 않습니다.")
+            end = next_end
+        return self
 
 
 class PdfInfo(BaseModel):

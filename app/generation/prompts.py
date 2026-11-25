@@ -6,7 +6,7 @@ from dataclasses import dataclass
 
 from app.core.errors import fail
 from app.core.state import Record
-from app.materials.dto import Content, Paragraph, StudyNote
+from app.materials.dto import Content, Paragraph, PhraseChange, StudyNote
 
 from .dto import PdfBlock, PdfPage
 from .pdf_analysis import AnalyzedBlock, HardExpression, TermDefinition, Tier, analyze_page
@@ -36,6 +36,8 @@ CHEMICAL_FORMULA = re.compile(r"(?<![A-Za-z])(?:[A-Z][a-z]?[0-9₀-₉]*){2,}(?!
 QUANTITY = re.compile(r"[0-9０-９]+(?:[.,][0-9０-９]+)?\s*(?:[A-Za-z]+|센티미터|미터|킬로그램|그램|리터|밀리리터)")
 CITATION_OR_CHOICE = re.compile(r"^\s*(?:[①-⑳㉠-㉭㈀-㈍]|[ㄱ-ㅎ][.)]|출처\s*[:：])")
 PROTECTED_SPANS = (QUOTED, MATH_EXPRESSION, CHEMICAL_FORMULA, QUANTITY)
+WORD = re.compile(r"[^\W_]+")
+PARTICLE = re.compile(r"(?<=[가-힣]{2})(?:에서|에게|으로|에는|에도|은|는|이|가|을|를|에|의|도|로|와|과)$")
 TEACHER_LABEL = re.compile(
     r"^\s*(?:교사용(?:\s*(?:자료|설명|참고|주석|정답))?|지도(?:상\s*)?유의점|지도\s*방안|"
     r"정답(?:\s*(?:및|과)\s*해설)?|예시\s*답(?:안)?|채점\s*기준)\s*(?:[:：]|$)"
@@ -52,9 +54,9 @@ CONVERT_INSTRUCTIONS = """다문화 학생을 위한 '학습 한국어' PDF 교�
 - protect: preserve가 true이면 그대로 두고 audience만 판단한다. 문학 작품·지문 원문 인용, 문제의 보기·선택지, 수식·화학식, 표의 수치, 출처 표기는 true로 표시한다.
 - teacher, protect, other 블록은 terms·hard·easy_low·easy_mid·visual을 비운다.
 - 블록의 text 안에서 ‸는 원문의 줄 나눔이다. 그 자리를 띄어 쓰면 true, 붙여 쓰면 false를 차례대로 joins에 넣는다. ‸가 없으면 [].
-- terms: 실제 원문에 있는 교과 개념어만 원문 그대로 고른다. 일반 어휘·고유명사·숫자·수식은 제외한다. 블록당 최대 3개, 쪽당 최대 10개. 이미 알려 준 knownTerms는 다시 정의하지 않는다.
-- hard: 학습자가 막힐 만한 실제 표현을 블록당 최대 10개 고른다. from은 원문에 글자 그대로 있는 2~14자다. 핵심어·숫자·날짜·단위·수식·고유명사·인용구·보기 번호를 포함하지 않는다.
-- easy: 원래 자리에 넣어 자연스럽게 읽히는 쉬운 표현. 활용형을 맞추고 되도록 짧게 쓴다. note: 원문을 유지해야 할 때 덧붙이는 짧은 설명(15자 이내).
+- terms: 제목·소제목과 본문에서 글을 이해하는 데 필요한 실제 교과 개념어를 원문 그대로 고른다. 일반 어휘·고유명사·숫자·수식은 제외한다. 블록당 최대 3개, 쪽당 최대 10개. 이미 알려 준 knownTerms는 다시 정의하지 않는다.
+- hard: learner.reconstructionMastery에서 숙달도 6 미만인 위계를 중심으로, 읽기를 가로막을 만한 말과 어구를 블록당 최대 10개까지 적극적으로 고른다. from은 joins대로 줄을 연결한 원문에 글자 그대로 있는 2~14자다. 핵심어·숫자·날짜·단위·수식·고유명사·인용구·보기 번호를 포함하지 않는다.
+- easy: 원래 자리에 넣어 앞뒤 문장과 자연스럽게 읽히는 표현. 조사와 활용형을 맞추고 원어보다 길어지지 않게 쓴다. 앞뒤 낱말을 반복하지 않는다. note: 원문을 유지해야 할 때 덧붙이는 15자 이내의 쉬운 설명.
 - tier: "1" 생활 한국어, "2-1" 교실 어휘, "2-2" 사고 도구, "2-3" 범용 지식 어휘, "3" 교과 적응 한국어.
 - terms의 쉬운 뜻(easy)은 한 문장이다. translation에는 이 학습자의 nativeLanguage에 해당 교과에서 실제 쓰는 대역만 적는다. 한국어 또는 언어 미지정이면 빈 문자열이다.
 - 학생 내용에 교사용 답·해설을 넣지 않는다.
@@ -95,21 +97,38 @@ def _joined_text(text: str, joins: list[bool]) -> str:
     return parts[0] + "".join((" " if space else "") + part for space, part in zip(joins, parts[1:]))
 
 
-def _replacement(expression: HardExpression, mastery: int) -> str:
+def _replacement(expression: HardExpression, mastery: int, before: str, after: str) -> str:
     source = expression.source
     easy = expression.easy.strip()
     note = expression.note.strip()
-    if mastery >= 6 or not 2 <= len(source) <= 14 or PROTECTED.search(source):
-        return source
-    if PROTECTED.search(easy) or PROTECTED.search(note) or "\n" in easy or "\n" in note:
-        return source
+    original_words = WORD.findall(source)
+    easy_words = WORD.findall(easy)
+    if (not easy_words or "".join(easy_words) == "".join(original_words) or PROTECTED.search(easy)
+            or any(marker in easy for marker in ("\r", "\n", "‸")) or _repeats_nearby(easy_words, before, after)):
+        easy = ""
+    note_words = "".join(WORD.findall(note))
+    if (not note_words or note_words in ("".join(original_words), "".join(easy_words)) or PROTECTED.search(note)
+            or any(marker in note for marker in ("\r", "\n", "‸"))):
+        note = ""
     if mastery <= 3 and easy:
         return easy
     if expression.tier != "3" and easy and len(easy) <= len(source) + 3:
         return easy
     if 0 < len(note) <= 15:
         return f"{source}({note})"
-    return easy if expression.tier != "3" and easy else source
+    return easy or source
+
+
+def _repeats_nearby(words: list[str], before: str, after: str) -> bool:
+    left = WORD.findall(before)[-3:]
+    right = WORD.findall(after)[:3]
+    for size in range(1, min(len(words), 3) + 1):
+        for outer, inner in ((left[-size:], words[:size]), (right[:size], words[-size:])):
+            if len(outer) == size and all(
+                PARTICLE.sub("", a) == PARTICLE.sub("", b) for a, b in zip(outer, inner, strict=True)
+            ):
+                return True
+    return False
 
 
 def _occurrences(text: str, expression: str):
@@ -117,10 +136,12 @@ def _occurrences(text: str, expression: str):
         yield match.span()
 
 
-def _rewrite(block: ResolvedBlock, term_definitions: dict[str, TermDefinition], mastery: dict[Tier, int]) -> str:
+def _rewrite(
+    block: ResolvedBlock, term_definitions: dict[str, TermDefinition], mastery: dict[Tier, int]
+) -> tuple[str, list[PhraseChange]]:
     text = block.text
     if not block.editable:
-        return text
+        return text, []
 
     protected = [match.span() for pattern in PROTECTED_SPANS for match in pattern.finditer(text)]
     for term in term_definitions:
@@ -128,18 +149,34 @@ def _rewrite(block: ResolvedBlock, term_definitions: dict[str, TermDefinition], 
 
     replacements: list[tuple[int, int, str]] = []
     for expression in sorted(block.analysis.hard, key=lambda item: len(item.source), reverse=True):
-        replacement = _replacement(expression, mastery[expression.tier])
-        if replacement == expression.source:
+        source = expression.source
+        level = mastery[expression.tier]
+        if (level >= 6 or not 2 <= len(source) <= 14 or source != source.strip() or not WORD.search(source)
+                or PROTECTED.search(source) or any(marker in source for marker in ("\r", "\n", "‸"))):
             continue
-        for start, end in _occurrences(text, expression.source):
+        for start, end in _occurrences(text, source):
             if any(start < stop and end > begin for begin, stop in protected):
+                continue
+            replacement = _replacement(expression, level, text[:start], text[end:])
+            if replacement == source:
                 continue
             protected.append((start, end))
             replacements.append((start, end, replacement))
             break
-    for start, end, replacement in sorted(replacements, reverse=True):
-        text = text[:start] + replacement + text[end:]
-    return text if len(text) <= 10_000 else block.text
+    if not replacements:
+        return text, []
+    if len(text) + sum(len(replacement) - (end - start) for start, end, replacement in replacements) > 10_000:
+        return text, []
+    updated = ""
+    changes = []
+    cursor = 0
+    for start, end, replacement in sorted(replacements):
+        updated += text[cursor:start]
+        changes.append(PhraseChange(start=len(updated), original=text[start:end], replacement=replacement))
+        updated += replacement
+        cursor = end
+    updated += text[cursor:]
+    return updated, changes
 
 
 def _study_note(
@@ -236,8 +273,8 @@ def convert_pdf(
     for block in resolved:
         if block.hidden or not block.text.strip():
             continue
-        text = _rewrite(block, term_definitions, mastery)
-        paragraphs.append(Paragraph(id=block.original.id, text=text, page=block.number))
+        text, changes = _rewrite(block, term_definitions, mastery)
+        paragraphs.append(Paragraph(id=block.original.id, text=text, page=block.number, phraseChanges=changes))
         note = _study_note(block, text, reading, term_definitions)
         if note is not None:
             study_notes.append(note)

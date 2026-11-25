@@ -76,6 +76,26 @@ def test_role_validation_csrf_and_session_expiration(session):
     assert active_key not in state.sessions
 
 
+def test_korean_demo_teacher_and_student_can_select_their_classes(session):
+    _, make_client = session
+    teacher, _ = make_client("t_korean")
+    student, _ = make_client("s_a")
+    teacher_classes = teacher.get("/classes").raise_for_status().json()["items"]
+    student_classes = student.get("/classes").raise_for_status().json()["items"]
+    assert {row["id"]: row["teacherSubject"] for row in teacher_classes} == {
+        "cls_1": "korean",
+        "cls_reading": "korean",
+    }
+    assert {row["id"] for row in student_classes} == {"cls_1", "cls_reading"}
+    assert student.get("/classes/cls_reading/dashboard").status_code == 200
+
+    sources = teacher.get("/classes/cls_1/sources").raise_for_status().json()["items"]
+    assert [(source["id"], source["subject"]) for source in sources] == [("src_korean_1", "korean")]
+    pdf = teacher.get(f"/files/{sources[0]['fileId']}/download").raise_for_status()
+    assert pdf.content.startswith(b"%PDF")
+    assert teacher.get("/sources/src_math_1").status_code == 404
+
+
 def test_open_class_and_invite_with_owner_assigned_subject(session):
     state, make_client = session
     owner, _ = make_client("t_math")

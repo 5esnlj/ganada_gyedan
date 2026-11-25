@@ -1,7 +1,7 @@
 import { loadPreviewFont, previewFont } from './fonts';
 import { createRaster, releaseRaster, wrapLine } from './raster';
 import type { Raster } from './raster';
-import type { PdfHelpContent, RenderedPage } from './types';
+import type { PdfHelpContent, PdfPhraseResult, RenderedPage } from './types';
 
 type AppendixPage = Omit<RenderedPage, 'number'>;
 
@@ -15,7 +15,7 @@ interface HelpSection {
   rows: HelpRow[];
 }
 
-function sectionsFrom(content: PdfHelpContent): HelpSection[] {
+function sectionsFrom(content: PdfHelpContent, deferred: readonly PdfPhraseResult[]): HelpSection[] {
   const hidden = new Set(content.hiddenBlockIds);
   const visible = new Map(content.paragraphs.filter(item => !hidden.has(item.id)).map(item => [item.id, item.page]));
   const groups = new Map<number, HelpRow[]>();
@@ -38,6 +38,12 @@ function sectionsFrom(content: PdfHelpContent): HelpSection[] {
       rows.push({ title, text: list });
     }
     if (rows.length) groups.set(page, rows);
+  }
+  for (const { blockId, page, change } of deferred) {
+    if (!visible.has(blockId)) continue;
+    const rows = groups.get(page) ?? [];
+    rows.push({ title: change.original, text: change.replacement });
+    groups.set(page, rows);
   }
   const sections = [...groups.entries()].sort(([a], [b]) => a - b)
     .map(([page, rows]) => ({ heading: page ? `원본 ${page}쪽 공부 도움` : '공부 도움', rows }));
@@ -63,8 +69,8 @@ const contentWidth = width - 2 * margin;
 const bottom = height - 52;
 const ink = '#183133';
 
-export async function renderHelpPages(content: PdfHelpContent): Promise<AppendixPage[]> {
-  const sections = sectionsFrom(content);
+export async function renderHelpPages(content: PdfHelpContent, deferred: readonly PdfPhraseResult[] = []): Promise<AppendixPage[]> {
+  const sections = sectionsFrom(content, deferred);
   if (!sections.length) return [];
   await loadPreviewFont();
 

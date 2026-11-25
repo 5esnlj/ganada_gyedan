@@ -130,6 +130,7 @@ def test_pdf_conversion_review_and_publishing(database, monkeypatch, tmp_path):
             token = student.post("/auth/login", json=student_login).raise_for_status().json()["csrfToken"]
             student.headers["X-CSRF-Token"] = token
             assert student.get(path).status_code == 404
+            assert student.get(path + "/download").status_code == 404
             assert student.get("/ai-credentials").status_code == 403
             assert student.post(endpoint, headers=request_headers, json=job_body).status_code == 403
 
@@ -139,8 +140,13 @@ def test_pdf_conversion_review_and_publishing(database, monkeypatch, tmp_path):
         }}).raise_for_status()
         assert teacher.post(path + "/review", headers={"If-Match": first_tag}).status_code == 412
         reviewed = teacher.post(path + "/review", headers={"If-Match": patched.headers["etag"]}).raise_for_status()
-        published = teacher.post(path + "/publish", headers={"If-Match": reviewed.headers["etag"]}).raise_for_status()
-        assert published.json()["status"] == "published"
+        assert teacher.post(path + "/publish", headers={"If-Match": reviewed.headers["etag"]},
+                            files={"file": ("bad.pdf", b"invalid", "application/pdf")}).status_code == 415
+        assert teacher.get(path).raise_for_status().json()["status"] == "reviewed"
+        converted = _sample_pdf(1)
+        published = teacher.post(path + "/publish", headers={"If-Match": reviewed.headers["etag"]},
+                                 files={"file": ("converted.pdf", converted, "application/pdf")}).raise_for_status()
+        assert published.json()["status"] == "published" and published.json()["hasPdf"]
 
     with TestClient(create_app() if database else teacher.app, base_url="http://testserver/api/v1") as student:
         student.post("/auth/login", json=student_login).raise_for_status()
@@ -148,6 +154,15 @@ def test_pdf_conversion_review_and_publishing(database, monkeypatch, tmp_path):
         assert visible["content"]["paragraphs"][0]["text"] == "교과 자료를 확인한다."
         assert visible["content"]["limitedSupportPages"] == [1]
         assert visible["originalContent"] is None
+        entries = student.get(school + "/materials").raise_for_status().json()["items"]
+        assert any(entry["id"] == job["resultId"] and entry["hasPdf"] for entry in entries)
+        download = student.get(path + "/download").raise_for_status()
+        assert download.content == converted and download.headers["content-type"] == "application/pdf"
+        assert student.get(f"/files/{source['fileId']}/download").status_code == 404
+
+        student.post("/auth/login", json=student_login | {"loginId": "s_a"}).raise_for_status()
+        assert student.get(path).status_code == 404
+        assert student.get(path + "/download").status_code == 404
 
 
 def _mock_upstage(monkeypatch, *, finish_reason="stop", content=None, error_type=None):
@@ -516,3 +531,26 @@ def test_pdf_key_and_internal_id_conflict_only_reuses_unambiguous_rows():
     assert len(requests) == 2 and result.limitedSupportPages == [1]
     assert [row.text for row in result.paragraphs] == ["비율을 검증합니다.", "다른 수도 검증합니다."]
     assert not result.translations
+
+
+def test_pdf_tracks_only_contextual_phrase_changes_and_preserves_quoted_text():
+    original = "📘 소리를 내는 발음 기관을 관찰합니다. ‘관찰합니다’는 인용 표현입니다."
+    page = PdfPage(number=1, blocks=[PdfBlock(id="p1b1", text=original)])
+
+    def analyze(_instructions, _request):
+        return {"blocks": [{
+            "id": "p1b1", "role": "body", "audience": "student",
+            "hard": [
+                {"from": "발음 기관", "easy": "소리를 내는 몸의 부분", "note": "몸의 부분", "tier": "3"},
+                {"from": "관찰합니다", "easy": "살펴봅니다", "tier": "3"},
+                {"from": "인용 표현", "easy": "인용 표현.", "tier": "3"},
+            ],
+        }]}
+
+    result = convert_pdf(analyze, {"subject": "korean", "unit": "한글"},
+                         {"level": "advanced", "nativeLanguage": "zh"}, [page])
+    paragraph, = result.paragraphs
+    assert paragraph.text == "📘 소리를 내는 발음 기관(몸의 부분)을 살펴봅니다. ‘관찰합니다’는 인용 표현입니다."
+    assert [change.original for change in paragraph.phraseChanges] == ["발음 기관", "관찰합니다"]
+    for change in paragraph.phraseChanges:
+        assert paragraph.text[change.start:change.start + len(change.replacement)] == change.replacement

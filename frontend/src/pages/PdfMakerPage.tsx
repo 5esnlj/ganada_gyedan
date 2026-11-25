@@ -11,7 +11,7 @@ import { useApi } from '../hooks';
 import {
   openSourcePdf, toConversionPages, type PdfSource,
 } from '../pdf';
-import { hasPositionedParagraphs, PdfComparison } from './PdfComparison';
+import { hasPositionedParagraphs, makeEditionPdf, PdfComparison } from './PdfComparison';
 import styles from './PdfMakerPage.module.css';
 import { errorMessage, Failure, languageLabel, LEVEL_LABELS, Panel, SolarKey, useAction } from './teacherWorkspace';
 
@@ -353,7 +353,10 @@ function EditionEditor({ source, initial, initialVersion, onReload }: {
     || positioned === false;
 
   function changeParagraph(id: string, text: string) {
-    setEdited((content) => ({ ...content, paragraphs: content.paragraphs.map((p) => p.id === id ? { ...p, text } : p) }));
+    setEdited((content) => ({
+      ...content,
+      paragraphs: content.paragraphs.map((p) => p.id === id ? { ...p, text, phraseChanges: [] } : p),
+    }));
   }
 
   async function saveContent(content: MaterialContent) {
@@ -370,7 +373,12 @@ function EditionEditor({ source, initial, initialVersion, onReload }: {
 
   function update(action: 'review' | 'publish') {
     void run(async () => {
-      accept(await pdfMakerApi.transition(edition.id, action, version));
+      if (action === 'publish' && positioned && pages.data?.length) {
+        const pdf = await makeEditionPdf(pages.data, edition.content);
+        accept(await pdfMakerApi.publishPdf(edition.id, pdf, version));
+      } else {
+        accept(await pdfMakerApi.transition(edition.id, action, version));
+      }
     });
   }
 
@@ -408,7 +416,8 @@ function EditionEditor({ source, initial, initialVersion, onReload }: {
       {editable && (
         <div className={styles.actions}>
           {edition.status === 'draft' && <Button disabled={busy || dirty || editingOnPage} onClick={() => update('review')}>검토 완료</Button>}
-          {edition.status === 'reviewed' && <Button disabled={busy || dirty || editingOnPage} onClick={() => update('publish')}>학생에게 배포</Button>}
+          {edition.status === 'reviewed' && <Button disabled={busy || dirty || editingOnPage || Boolean(source.fileId && !pages.data)}
+            onClick={() => update('publish')}>{busy ? '배포 중…' : '학생에게 배포'}</Button>}
         </div>
       )}
       {(edited.translations.length > 0 || Boolean(edited.studyNotes?.length)) && (

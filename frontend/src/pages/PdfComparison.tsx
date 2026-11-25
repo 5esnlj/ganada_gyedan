@@ -5,6 +5,7 @@ import type { MaterialContent } from '../api/pdfMaker';
 import { Button } from '../components';
 import { useApi } from '../hooks';
 import { canEditPdfBlock, exportPreviewPdf, renderConvertedPages, type PdfBlock, type PdfPage } from '../pdf';
+import { revertPhrase } from '../pdf/phrases';
 import styles from './PdfMakerPage.module.css';
 import { errorMessage, Failure, Panel, useAction } from './teacherWorkspace';
 
@@ -37,6 +38,12 @@ export function hasPositionedParagraphs(pages: PdfPage[], content: MaterialConte
   return pages.some((page) => page.blocks.some((block) => paragraphs.get(block.id) === page.number));
 }
 
+export async function makeEditionPdf(originals: PdfPage[], content: MaterialContent) {
+  const prepared = previewContent(content, originals[0].number);
+  const full = await renderConvertedPages(originals, prepared);
+  return exportPreviewPdf(full, prepared);
+}
+
 function bounds(page: PdfPage, block: PdfBlock) {
   const left = Math.max(0, block.x);
   const top = Math.max(0, block.y);
@@ -50,6 +57,20 @@ function bounds(page: PdfPage, block: PdfBlock) {
   };
 }
 
+function lineTargets(block: PdfBlock) {
+  const width = block.width || 1;
+  const height = Math.max(block.height, block.fontSize) || 1;
+  const lines = block.lines.length ? block.lines : [[block.x, block.y, width, height]];
+  return lines.map(([x, y, lineWidth, size], index) => (
+    <span key={index} className={styles.paragraphLine} aria-hidden="true" style={{
+      left: `${(x - block.x) / width * 100}%`,
+      top: `${(y - block.y) / height * 100}%`,
+      width: `${lineWidth / width * 100}%`,
+      height: `${size / height * 100}%`,
+    }} />
+  ));
+}
+
 function ParagraphEditor({ block, page, paragraph, content, firstPage, onSave, onClose, onReload }: {
   block: PdfBlock;
   page: PdfPage;
@@ -60,20 +81,27 @@ function ParagraphEditor({ block, page, paragraph, content, firstPage, onSave, o
   onClose: () => void;
   onReload: () => void;
 }) {
-  const [text, setText] = useState(paragraph.text);
+  const [draft, setDraft] = useState(paragraph);
   const { busy, error, run } = useAction();
   const below = block.y + block.height < page.height * 0.57;
   const y = below ? block.y + block.height : block.y;
   const source = block.text.replace(/‸/g, ' ').trim();
-  const canSave = text.trim().length > 0 && text.trim() !== paragraph.text.trim();
+  const changes = draft.phraseChanges ?? [];
+  const terms = content.translations.filter(({ term }) => term && draft.text.includes(term));
+  const canSave = draft.text.trim().length > 0 && draft.text.trim() !== paragraph.text.trim();
+
+  function setText(text: string) {
+    setDraft({ ...paragraph, text, phraseChanges: text === paragraph.text ? paragraph.phraseChanges : [] });
+  }
 
   function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!canSave || busy) return;
     void run(async () => {
+      const updated = draft.phraseChanges?.length ? draft : { ...draft, text: draft.text.trim() };
       const next = {
         ...content,
-        paragraphs: content.paragraphs.map((item) => item.id === paragraph.id ? { ...item, text: text.trim() } : item),
+        paragraphs: content.paragraphs.map((item) => item.id === paragraph.id ? updated : item),
       };
       const candidate = await renderPage(page, next, firstPage);
       if (candidate.unplacedBlockIds.includes(block.id)) {
@@ -95,13 +123,39 @@ function ParagraphEditor({ block, page, paragraph, content, firstPage, onSave, o
     >
       <label>
         <strong>문단 편집</strong>
-        <textarea value={text} onChange={(event) => setText(event.target.value)} maxLength={10000}
+        <textarea value={draft.text} onChange={(event) => setText(event.target.value)} maxLength={10000}
           rows={4} autoFocus disabled={busy} />
       </label>
+      {changes.length > 0 && (
+        <details className={styles.details}>
+          <summary>문단의 변환 표현 {changes.length}개</summary>
+          <ul className={styles.phraseList}>
+            {changes.map((change) => (
+              <li key={change.start}>
+                <span>{change.original} → <strong>{change.replacement}</strong></span>
+                <Button variant="secondary" disabled={busy} aria-label={`${change.original} 원문으로 되돌리기`}
+                  onClick={() => setDraft((current) => revertPhrase(current, change))}>되돌리기</Button>
+              </li>
+            ))}
+          </ul>
+        </details>
+      )}
+      {terms.length > 0 && (
+        <details className={styles.details}>
+          <summary>이 문단의 핵심어 {terms.length}개</summary>
+          <ul className={styles.phraseList}>
+            {terms.map(({ term, meaning, translation }, index) => (
+              <li key={`${term}:${index}`}><strong>{term}</strong><span>
+                {[meaning, translation].filter(Boolean).join(' · ')}
+              </span></li>
+            ))}
+          </ul>
+        </details>
+      )}
       {Boolean(error) && <Failure message={errorMessage(error)}
         retry={error instanceof ApiError && error.status === 412 ? onReload : undefined} />}
       <div className={styles.actions}>
-        <Button variant="secondary" onClick={() => setText(source)} disabled={busy || text === source}>원문 가져오기</Button>
+        <Button variant="secondary" onClick={() => setText(source)} disabled={busy || draft.text === source}>원문 가져오기</Button>
         <Button variant="secondary" onClick={onClose} disabled={busy}>취소</Button>
         <Button type="submit" disabled={busy || !canSave}>{busy ? '저장 중…' : '수정 저장'}</Button>
       </div>
@@ -126,6 +180,8 @@ export function PdfComparison({ originals, content, canEdit, canDownload, title,
   const original = originals.find((page) => page.number === current) ?? originals[0];
   const { data: preview, error: previewError, retry } = useApi(() => renderPage(original, content, firstPage), [original, content, firstPage]);
   const converted = preview?.pages.find((page) => page.number === original.number);
+  const phrases = preview?.phrases ?? [];
+  const appliedCount = phrases.filter((phrase) => phrase.applied).length;
   const paragraphById = new Map(content.paragraphs
     .filter((paragraph) => pageNumber(paragraph, firstPage) === original.number)
     .map((paragraph) => [paragraph.id, paragraph]));
@@ -142,8 +198,7 @@ export function PdfComparison({ originals, content, canEdit, canDownload, title,
 
   function download() {
     void run(async () => {
-      const full = await renderConvertedPages(originals, previewContent(content, firstPage));
-      const url = URL.createObjectURL(await exportPreviewPdf(full, content));
+      const url = URL.createObjectURL(await makeEditionPdf(originals, content));
       const link = document.createElement('a');
       link.href = url;
       link.download = `${title}-전환자료.pdf`;
@@ -190,7 +245,7 @@ export function PdfComparison({ originals, content, canEdit, canDownload, title,
                   anchor.current = event.currentTarget;
                   setSelected(block.id);
                   onEditingChange(true);
-                }} />
+                }}>{lineTargets(block)}</button>
             ))}
             {active && activeParagraph && <ParagraphEditor key={active.id} block={active} page={original}
               paragraph={activeParagraph} content={content} firstPage={firstPage} onSave={onSave}
@@ -198,6 +253,20 @@ export function PdfComparison({ originals, content, canEdit, canDownload, title,
           </div>
         </figure>
       </div>
+      {converted && phrases.length > 0 && (
+        <details key={original.number} className={styles.details}>
+          <summary>지면에 반영된 표현 {appliedCount}개{phrases.length > appliedCount
+            ? ` · 도움말 ${phrases.length - appliedCount}개` : ''}</summary>
+          <ul className={styles.phraseList}>
+            {phrases.map(({ blockId, change, applied }) => (
+              <li key={`${blockId}:${change.start}`}>
+                <span>{change.original} → <strong>{change.replacement}</strong></span>
+                <small>{applied ? '지면 반영' : 'PDF 도움말'}</small>
+              </li>
+            ))}
+          </ul>
+        </details>
+      )}
       {converted && preview?.notices.length ? <ul className={styles.notices}>
         {preview.notices.map((notice) => <li key={notice}>{notice}</li>)}
       </ul> : null}

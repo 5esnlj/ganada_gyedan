@@ -1,0 +1,42 @@
+.cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 15rem), 1fr));
+  gap: var(--space-m);
+}
+
+.filter, .meta, .download {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-s);
+}
+
+.filter select, .download {
+  padding: var(--space-xs) var(--space-m);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-button);
+  background: var(--color-surface);
+}
+
+.meta { justify-content: space-between; color: var(--color-text-sub); }
+.download { color: var(--color-text); text-decoration: none; }
+.download:hover { border-color: var(--color-primary); }
+
+.reader {
+  display: grid;
+  gap: var(--space-m);
+  padding: clamp(var(--space-m), 4vw, var(--space-xl));
+  border: 1px solid var(--color-line);
+  border-radius: var(--radius-main);
+  background: var(--color-surface);
+  line-height: 1.65;
+  overflow-wrap: anywhere;
+}
+
+.reader h2, .reader p, .reader dl, .reader dd { margin: 0; }
+.reader h2 { font-size: var(--font-size-card-title); }
+.reader p { white-space: pre-wrap; }
+.reader dt { font-weight: var(--font-weight-bold); }
+.reader dl { display: grid; gap: var(--space-s); }
+.reader details { margin-top: var(--space-xs); padding: var(--space-xs) var(--space-s); background: var(--color-background); border-radius: var(--radius-nav); }
+.reader summary { cursor: pointer; }

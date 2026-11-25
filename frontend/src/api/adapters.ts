@@ -4,7 +4,7 @@ import type { AreaCode, LevelCode, SourceOut, StudentDashboardOut, TeacherDashbo
 export const SUBJECT_LABELS: Record<AreaCode, Subject> = { korean: '국어', math: '수학', social: '사회', science: '과학', daily: '생활한국어' };
 const LEVEL_LABELS: Record<LevelCode, Level> = { below_beginner: '초급 미달', beginner: '초급', intermediate: '중급', advanced: '고급' };
 const LANGUAGES: Record<string, string> = { ko: '한국어', zh: '중국어', vi: '베트남어', mn: '몽골어', ru: '러시아어', uz: '우즈베크어', ja: '일본어', en: '영어' };
-function dateLabel(value: string | null) { return value ? new Intl.DateTimeFormat('ko-KR', { timeZone: 'Asia/Seoul', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date(value)) : '미배포'; }
+export function dateLabel(value: string | null) { return value ? new Intl.DateTimeFormat('ko-KR', { timeZone: 'Asia/Seoul', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date(value)) : '미배포'; }
 export function adaptTeacherDashboard(raw: TeacherDashboardOut): ClassDashboard {
   return {
     classId: raw.classId, className: raw.className, selectedArea: raw.selectedArea, subject: SUBJECT_LABELS[raw.selectedArea], studentCount: raw.studentCount,

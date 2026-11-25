@@ -1,14 +1,14 @@
 SET NAMES utf8mb4;
 SELECT DATABASE() AS selected_database, VERSION() AS mariadb_version;
-SELECT 'users' AS table_name, COUNT(*) AS actual_rows, 8 AS expected_rows FROM users
+SELECT 'users' AS table_name, COUNT(*) AS actual_rows, 9 AS expected_rows FROM users
 UNION ALL
-SELECT 'classes' AS table_name, COUNT(*) AS actual_rows, 2 AS expected_rows FROM classes
+SELECT 'classes' AS table_name, COUNT(*) AS actual_rows, 3 AS expected_rows FROM classes
 UNION ALL
-SELECT 'class_memberships' AS table_name, COUNT(*) AS actual_rows, 7 AS expected_rows FROM class_memberships
+SELECT 'class_memberships' AS table_name, COUNT(*) AS actual_rows, 10 AS expected_rows FROM class_memberships
 UNION ALL
-SELECT 'files' AS table_name, COUNT(*) AS actual_rows, 56 AS expected_rows FROM files
+SELECT 'files' AS table_name, COUNT(*) AS actual_rows, 57 AS expected_rows FROM files
 UNION ALL
-SELECT 'source_materials' AS table_name, COUNT(*) AS actual_rows, 3 AS expected_rows FROM source_materials
+SELECT 'source_materials' AS table_name, COUNT(*) AS actual_rows, 4 AS expected_rows FROM source_materials
 UNION ALL
 SELECT 'diagnostic_forms' AS table_name, COUNT(*) AS actual_rows, 3 AS expected_rows FROM diagnostic_forms
 UNION ALL

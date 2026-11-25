@@ -90,13 +90,22 @@ def _load_learning_content(cursor, store):
             archived=row["archived_at"] is not None, createdAt=_date(row["created_at"]),
         )
 
-    cursor.execute("SELECT * FROM student_materials")
+    cursor.execute(
+        """SELECT m.*, f.object_key, f.mime_type, f.size_bytes, f.checksum_sha256
+           FROM student_materials m LEFT JOIN files f ON f.id = m.converted_file_id
+           AND f.deleted_at IS NULL AND f.scan_status = 'clean' AND f.kind = 'converted_file'"""
+    )
     for row in cursor:
         key = str(row["id"])
         store.materials[key] = _assignment(store, row) | {
             "id": key, "revision": row["revision"], "title": store.sources[str(row["source_material_id"])]["title"],
             "content": json.loads(row["converted_content"]),
         }
+        if row["object_key"] is not None:
+            store.materials[key]["convertedFile"] = {
+                "objectKey": row["object_key"], "mimeType": row["mime_type"],
+                "size": row["size_bytes"], "checksum": row["checksum_sha256"],
+            }
 
     cursor.execute("""SELECT q.*, a.profile_snapshot FROM quizzes q LEFT JOIN ai_requests a ON a.id=q.ai_request_id
                       AND a.operation='generate_quiz' AND a.prompt_version='check-quiz-v1'""")

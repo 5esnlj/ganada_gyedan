@@ -32,9 +32,11 @@ export type DiagnosticQuestion = {
   sectionNumber?: number;
   sectionTotal?: number;
   maxPoints?: number;
+  listeningPlaysRemaining?: number;
 };
 export type DiagnosticNext = { progress: DiagnosticStatus; question: DiagnosticQuestion | null };
 export type DiagnosticAnswerOut = { progress: DiagnosticStatus; replayed: boolean };
+export type DiagnosticListenOut = { remainingPlays: number };
 export type AssessmentSection = { score: number; maxScore: number; percent: number; level: LevelCode };
 export type AssessmentSummary = {
   gradeBand: GradeBand;
@@ -51,6 +53,7 @@ export type AssessmentSummary = {
     score: number; maxScore: number; percent: number; questionCount: number;
     status: 'adequate' | 'needs_improvement';
   };
+  areaParts?: (AssessmentSection & { area: AreaCode; skill: DiagnosticSkill })[];
 };
 export type DiagnosticResults = {
   formId: string; isSynthetic: boolean; parts: PartResult[]; areas: AreaResult[];

@@ -21,6 +21,11 @@ class DiagnosticAnswer(Input):
     selectedOptionId: str | None = Field(min_length=1, max_length=32)
 
 
+class DiagnosticListen(Input):
+    questionId: str = Field(min_length=1, max_length=100)
+    playId: str = Field(pattern=r"^[a-zA-Z0-9_-]{1,64}$")
+
+
 class DiagnosticStatus(BaseModel):
     status: DiagnosticStateCode
     formId: str | None
@@ -70,6 +75,7 @@ class DiagnosticQuestion(QuestionDisplay):
     maxPoints: float | None = None
     sectionNumber: int | None = None
     sectionTotal: int | None = None
+    listeningPlaysRemaining: int | None = None
 
 
 class DiagnosticNext(BaseModel):
@@ -80,6 +86,10 @@ class DiagnosticNext(BaseModel):
 class DiagnosticAnswerOut(BaseModel):
     progress: DiagnosticStatus
     replayed: bool
+
+
+class DiagnosticListenOut(BaseModel):
+    remainingPlays: int
 
 
 class PartResult(BaseModel):
@@ -105,6 +115,11 @@ class AssessmentScore(BaseModel):
 
 class AssessmentSkillResult(AssessmentScore):
     level: Level
+
+
+class AssessmentAreaPartResult(AssessmentSkillResult):
+    area: Area
+    skill: Skill
 
 
 class AssessmentTierCount(BaseModel):
@@ -138,6 +153,7 @@ class AssessmentSummary(BaseModel):
     overall: AssessmentOverallResult
     subjects: list[AssessmentSubjectResult]
     communication: AssessmentCommunicationResult
+    areaParts: list[AssessmentAreaPartResult] = Field(default_factory=list)
 
 
 class DiagnosticResults(BaseModel):

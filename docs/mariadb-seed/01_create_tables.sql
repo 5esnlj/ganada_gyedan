@@ -193,6 +193,7 @@ CREATE TABLE student_diagnostics (
   status ENUM('in_progress','completed') NOT NULL DEFAULT 'in_progress',
   started_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
   completed_at DATETIME(6) NULL,
+  listening_plays JSON NULL COMMENT '문항별 듣기 재생 요청 ID',
   PRIMARY KEY (student_id),
   UNIQUE KEY uq_diag_student_form (student_id, form_id),
   CONSTRAINT fk_diag_student FOREIGN KEY (student_id) REFERENCES users(id),

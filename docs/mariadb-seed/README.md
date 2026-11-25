@@ -17,6 +17,10 @@ HeidiSQL에서 여러 문장 구분이 문제라면 MariaDB CLI로 같은 스키
 
 `GANADA_DB_FILES_DIR`를 지정했다면 `files/seed/src_korean_1/sample.pdf`를 해당 저장 폴더의 `seed/src_korean_1/sample.pdf` 위치에 복사하세요. 기본 저장 경로라면 저장소에서 내려받은 예시 PDF를 그대로 사용합니다.
 
+## 기존 개발 DB에 듣기 횟수 저장 열 추가
+
+기존 DB나 예전 ZIP을 사용한다면 HeidiSQL에서 앱이 사용하는 DB를 선택하고 [05_add_diagnostic_listening_plays.sql](05_add_diagnostic_listening_plays.sql)을 실행하세요. 문항별 재생 횟수를 이어서 불러올 수 있도록 진단 기록에 열을 추가합니다. 최신 `01_create_tables.sql`에는 이 열이 포함되어 있습니다.
+
 ## 예시 계정
 
 앱의 가상 로그인 비밀번호는 모두 `mock-pass-123`입니다. SQL의 `users.password_hash`에는 현재 앱의 `scrypt-v1` 구현으로 변환한 값만 들어 있습니다. 계정마다 salt가 다릅니다. 이 비밀번호는 HeidiSQL이나 MariaDB 접속 계정의 비밀번호와 별개입니다.

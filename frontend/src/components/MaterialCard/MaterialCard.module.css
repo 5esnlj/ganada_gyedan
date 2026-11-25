@@ -5,13 +5,7 @@
   border-radius: 14px 14px 0 0;
   background: var(--color-surface); box-shadow: var(--shadow-page);
 }
-.unitRow { display: flex; align-items: center; gap: var(--space-xs); min-width: 0; }
-.unit {
-  display: inline-flex; align-items: center; justify-content: center; flex: 0 0 34px; height: 34px;
-  border-radius: 8px; background: var(--tone-accent); color: var(--color-on-primary);
-  font-size: var(--font-size-small); font-weight: var(--font-weight-bold);
-}
-.pageTitle { font-size: 12px; font-weight: var(--font-weight-bold); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pageTitle { font-size: 12px; font-weight: var(--font-weight-bold); padding-block: var(--space-xs); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .line { display: block; height: 7px; border-radius: 4px; background: var(--color-placeholder); }
 .short { width: 110px; }
 .figure { display: block; height: 44px; border-radius: 8px; background: var(--tone-bg); }

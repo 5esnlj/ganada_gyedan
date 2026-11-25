@@ -33,8 +33,8 @@ def test_pdf_conversion_review_and_publishing(database, monkeypatch, tmp_path):
     calls = []
     secret = "not-a-live-key-abcd"
 
-    def fake_solar(api_key, model, instructions, data):
-        assert api_key == secret and model == "solar-pro4"
+    def fake_solar(api_key, model, instructions, data, *, for_pdf):
+        assert api_key == secret and model == "solar-pro4" and for_pdf
         assert "수식" in instructions
         calls.append(data)
         return {
@@ -99,17 +99,17 @@ def test_pdf_conversion_review_and_publishing(database, monkeypatch, tmp_path):
         assert teacher.post(endpoint, headers=request_headers, json=changed).status_code == 409
         assert len(calls) == 1
 
-        def truncate_second_page(_key, _model, _instructions, data):
-            assert data["page"] == 2
-            raise APIError(502, "SOLAR_OUTPUT_TRUNCATED", solar.ERROR_MESSAGES["SOLAR_OUTPUT_TRUNCATED"])
+        def timeout_second_page(_key, _model, _instructions, data, *, for_pdf):
+            assert data["page"] == 2 and for_pdf
+            raise APIError(504, "SOLAR_READ_TIMEOUT", solar.ERROR_MESSAGES["SOLAR_READ_TIMEOUT"])
 
-        monkeypatch.setattr(solar, "complete_json", truncate_second_page)
+        monkeypatch.setattr(solar, "complete_json", timeout_second_page)
         failing_body = {**job_body, "pages": [{"number": 2, "blocks": [{"id": "p2b1", "text": "두 번째 쪽"}]}]}
         queued = teacher.post(endpoint, headers={"Idempotency-Key": "failing-page"}, json=failing_body)
         failed_id = queued.raise_for_status().json()["items"][0]["id"]
         failed = teacher.get(f"/generation-jobs/{failed_id}").raise_for_status().json()
-        assert failed["status"] == "failed" and failed["resultId"] is None
-        assert failed["errorCode"] == "SOLAR_OUTPUT_TRUNCATED"
+        assert failed["status"] == "unknown" and failed["resultId"] is None
+        assert failed["errorCode"] == "SOLAR_READ_TIMEOUT"
         assert failed["errorMessage"].startswith("2쪽 · ")
 
         path = f"/materials/{job['resultId']}"
@@ -146,12 +146,14 @@ def test_pdf_conversion_review_and_publishing(database, monkeypatch, tmp_path):
         assert visible["originalContent"] is None
 
 
-def _mock_upstage(monkeypatch, *, finish_reason, content):
+def _mock_upstage(monkeypatch, *, finish_reason="stop", content=None, error_type=None):
     requests = []
     client = httpx.Client
 
     def respond(request):
         requests.append(request)
+        if error_type is not None:
+            raise error_type("test timeout", request=request)
         return httpx.Response(200, json={"choices": [{
             "finish_reason": finish_reason, "message": {"content": content},
         }]})
@@ -192,6 +194,23 @@ def test_solar_distinguishes_completion_failures(monkeypatch, reason, content, c
     with pytest.raises(APIError) as error:
         solar.complete_json("not-a-live-key", solar.DEFAULT_MODEL, "변환 지시", {})
     assert error.value.code == code
+
+
+@pytest.mark.parametrize(("exception_type", "code"), [
+    (httpx.ConnectTimeout, "SOLAR_CONNECT_TIMEOUT"),
+    (httpx.ReadTimeout, "SOLAR_READ_TIMEOUT"),
+])
+def test_pdf_solar_timeout_is_classified_without_resending(monkeypatch, caplog, exception_type, code):
+    requests = _mock_upstage(monkeypatch, error_type=exception_type)
+    with pytest.raises(APIError) as error:
+        solar.complete_json("not-a-live-key", solar.DEFAULT_MODEL, "PDF 변환 지시", {"page": 2}, for_pdf=True)
+    assert error.value.code == code
+    request, = requests
+    assert request.extensions["timeout"]["connect"] == 8.0
+    assert request.extensions["timeout"]["read"] == 180.0
+    assert json.loads(request.content)["reasoning_effort"] == "none"
+    assert f"page=2, phase={exception_type.__name__}" in caplog.text
+    assert "not-a-live-key" not in caplog.text
 
 
 @pytest.mark.parametrize(("row_ids", "audience", "expected_code"), [

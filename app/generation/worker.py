@@ -66,7 +66,7 @@ async def run_jobs(app, job_ids):
             page = None
             try:
                 key, source, pages = await storage(_prepare, store, job, database)
-                call = partial(solar.complete_json, key, job["model"])
+                call = partial(solar.complete_json, key, job["model"], for_pdf=True)
                 result = await run_in_threadpool(convert_pdf, call, source, job["snapshot"]["learner"], pages)
                 await storage(_commit, store, job, result, database)
                 continue

@@ -1,8 +1,10 @@
 """Server-side client for the Upstage Chat Completions API."""
 
 import json
+import logging
 import os
 import re
+from time import monotonic
 from typing import Any
 
 import httpx
@@ -13,6 +15,8 @@ SOLAR_URL = "https://api.upstage.ai/v1/chat/completions"
 DEFAULT_MODEL = "solar-pro4"
 FENCED_JSON = re.compile(r"^[ \t]*```(?:json)?[ \t]*\r?\n(.*?)```[ \t]*$", re.I | re.M | re.S)
 FINISH_ERRORS = {"length": "SOLAR_OUTPUT_TRUNCATED", "content_filter": "SOLAR_OUTPUT_FILTERED"}
+PDF_READ_TIMEOUT = 180.0
+logger = logging.getLogger(__name__)
 
 ERROR_MESSAGES = {
     "SOLAR_KEY_REQUIRED": "교사 계정의 Solar API 키를 등록해 주세요.",
@@ -21,6 +25,8 @@ ERROR_MESSAGES = {
     "SOLAR_MODEL_UNAVAILABLE": "Solar 모델 ID와 이 키의 모델 사용 권한을 확인해 주세요.",
     "SOLAR_LIMIT": "Solar 사용량 한도 또는 결제 상태를 확인해 주세요.",
     "SOLAR_TIMEOUT": "Solar 응답을 받지 못했습니다. 요청이 처리되었을 수 있으니 확인 후 다시 시도해 주세요.",
+    "SOLAR_CONNECT_TIMEOUT": "Solar 서버에 연결하는 시간이 초과됐습니다. 백엔드를 실행한 환경의 인터넷 연결을 확인해 주세요.",
+    "SOLAR_READ_TIMEOUT": "Solar 답변이 대기 시간 안에 도착하지 않았습니다. Solar에서 이미 요청을 처리했을 수 있습니다.",
     "SOLAR_UNAVAILABLE": "Solar 연결이 불안정합니다. 잠시 후 다시 시도해 주세요.",
     "SOLAR_RESPONSE_INVALID": "Solar 응답에서 답변 형식을 확인할 수 없습니다.",
     "SOLAR_OUTPUT_TRUNCATED": "Solar 답변이 토큰 한도에서 중단됐습니다. 이 쪽만 다시 시도하고, 계속 실패하면 더 짧은 자료를 사용해 주세요.",
@@ -52,7 +58,7 @@ def model_name() -> str:
     return _canonical_model(model)
 
 
-def complete_json(api_key: str, model: str, instructions: str, data: dict[str, Any]) -> dict:
+def complete_json(api_key: str, model: str, instructions: str, data: dict[str, Any], *, for_pdf: bool = False) -> dict:
     """Call Solar once. The calling workflow owns retry and output validation."""
     model = _canonical_model(model)
     pro4 = model == DEFAULT_MODEL or model.startswith(f"{DEFAULT_MODEL}-")
@@ -65,18 +71,29 @@ def complete_json(api_key: str, model: str, instructions: str, data: dict[str, A
         "max_tokens": 8000,
     }
     if pro4:
-        # Pro 4 defaults to high reasoning, which shares the completion token budget.
-        payload.update(reasoning_effort="low", max_tokens=16_384)
+        # PDF output uses a fixed classification and annotation contract.
+        payload.update(reasoning_effort="none" if for_pdf else "low", max_tokens=16_384)
 
+    default_timeout = 120.0 if pro4 else 60.0
+    timeout = httpx.Timeout(default_timeout, connect=8.0, read=PDF_READ_TIMEOUT if for_pdf else default_timeout)
+    started = monotonic()
     try:
-        with httpx.Client(timeout=httpx.Timeout(120.0 if pro4 else 60.0, connect=8.0)) as client:
+        with httpx.Client(timeout=timeout) as client:
             response = client.post(
                 SOLAR_URL,
                 headers={"Authorization": f"Bearer {api_key}"},
                 json=payload,
             )
-    except httpx.TimeoutException:
-        fail(504, "SOLAR_TIMEOUT", ERROR_MESSAGES["SOLAR_TIMEOUT"])
+    except httpx.TimeoutException as error:
+        code = "SOLAR_TIMEOUT"
+        if for_pdf:
+            if isinstance(error, httpx.ConnectTimeout):
+                code = "SOLAR_CONNECT_TIMEOUT"
+            elif isinstance(error, httpx.ReadTimeout):
+                code = "SOLAR_READ_TIMEOUT"
+            logger.warning("Solar PDF request timed out (page=%s, phase=%s, elapsed=%.1fs)",
+                           data.get("page"), type(error).__name__, monotonic() - started)
+        fail(504, code, ERROR_MESSAGES[code])
     except httpx.RequestError:
         fail(502, "SOLAR_UNAVAILABLE", ERROR_MESSAGES["SOLAR_UNAVAILABLE"])
 

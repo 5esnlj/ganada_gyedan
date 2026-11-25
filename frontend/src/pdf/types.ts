@@ -90,6 +90,7 @@ export interface PdfPreview {
 
 export interface PdfSource {
   pageCount: number;
+  previewPage(number: number): Promise<RenderedPage>;
   readPages(
     from: number,
     to: number,

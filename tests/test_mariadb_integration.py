@@ -45,6 +45,9 @@ def test_mariadb_accounts_permissions_and_resumable_diagnostics():
         login(client, "s_a", "student")
         home = client.get(f"/classes/{class_id}/dashboard").raise_for_status().json()
         assert len(home["newMaterials"]) == 2 and len(home["quizzes"]) == 2
+        legacy = client.get("/diagnostic/results").raise_for_status().json()
+        assert all(part["maxScore"] == 100 for part in legacy["parts"])
+        assert all(area["maxScore"] == 200 for area in legacy["areas"])
 
         student = login(client, "s_pending", "student")
         headers = {"X-CSRF-Token": student["csrfToken"]}
@@ -53,8 +56,12 @@ def test_mariadb_accounts_permissions_and_resumable_diagnostics():
         client.post("/diagnostic/start", json={"classId": class_id, "gradeBand": "g34"}, headers=headers).raise_for_status()
         first = client.get("/diagnostic/next-question").raise_for_status().json()["question"]
         assert first["sequence"] == 1 and first["audioUrl"] and "correctOptionId" not in first
+        assert first["listeningPlaysRemaining"] == 2
         first_answer = {"questionId": first["id"], "selectedOptionId": None}
         client.post("/diagnostic/answers", json=first_answer, headers=headers).raise_for_status()
+        play = {"questionId": "g34-l02", "playId": "before-restart"}
+        first_play = client.post("/diagnostic/listening-plays", json=play, headers=headers).raise_for_status().json()
+        assert first_play == {"remainingPlays": 1}
         cookie = client.cookies["ganada_session"]
 
     # A new application has no Python memory from the previous process.
@@ -62,6 +69,13 @@ def test_mariadb_accounts_permissions_and_resumable_diagnostics():
         assert restarted.get("/auth/me").raise_for_status().json()["csrfToken"] == headers["X-CSRF-Token"]
         replay = restarted.post("/diagnostic/answers", json=first_answer, headers=headers).raise_for_status().json()
         assert replay["replayed"] and replay["progress"]["completedQuestions"] == 1
+        second = restarted.get("/diagnostic/next-question").raise_for_status().json()["question"]
+        assert second["id"] == play["questionId"] and second["listeningPlaysRemaining"] == 1
+        replay = restarted.post("/diagnostic/listening-plays", json=play, headers=headers).raise_for_status().json()
+        assert replay == first_play
+        last = restarted.post("/diagnostic/listening-plays", json=play | {"playId": "last-play"}, headers=headers)
+        assert last.raise_for_status().json() == {"remainingPlays": 0}
+        assert restarted.post("/diagnostic/listening-plays", json=play | {"playId": "extra-play"}, headers=headers).status_code == 409
         for number in range(2, 36):
             question = restarted.get("/diagnostic/next-question").raise_for_status().json()["question"]
             assert question["sequence"] == number
@@ -70,6 +84,8 @@ def test_mariadb_accounts_permissions_and_resumable_diagnostics():
             }, headers=headers).raise_for_status()
         result = restarted.get("/diagnostic/results").raise_for_status().json()
         assert result["assessmentSummary"]["gradeBand"] == "g34"
+        assert result["assessmentSummary"]["communication"]["maxScore"] == 52
+        assert all(part["score"] == 0 for part in result["assessmentSummary"]["areaParts"])
         assert len(result["parts"]) == 10 and len(result["areas"]) == 5
         assert restarted.post("/auth/logout", headers=headers).status_code == 204
 

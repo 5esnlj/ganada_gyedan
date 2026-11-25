@@ -278,6 +278,22 @@ export async function openSourcePdf(file: Blob): Promise<PdfSource> {
   let closing: Promise<void> | undefined;
   return {
     pageCount: pdf.numPages,
+    async previewPage(number) {
+      if (closing) throw new Error('PDF가 닫혔습니다.');
+      const page = await pdf.getPage(number);
+      const originalSize = page.getViewport({ scale: 1 });
+      try {
+        const viewport = page.getViewport({ scale: renderScale(originalSize) });
+        const raster = await renderOriginal(page, viewport);
+        try {
+          return { number, width: originalSize.width, height: originalSize.height, imageUrl: raster.canvas.toDataURL('image/png') };
+        } finally {
+          releaseRaster(raster);
+        }
+      } finally {
+        page.cleanup();
+      }
+    },
     async readPages(from, to, onProgress) {
       if (closing) throw new Error('PDF가 닫혔습니다.');
       if (![from, to].every(Number.isInteger) || from < 1 || to < from || to > pdf.numPages || to - from >= 10) {

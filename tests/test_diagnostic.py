@@ -55,6 +55,31 @@ def test_diagnostic_resume_and_explicit_unknown_are_idempotent():
         assert resumed.get("/diagnostic/results").status_code == 409
 
 
+def test_listening_limit_is_per_question_and_survives_relogin():
+    app = create_app()
+    with login(app, "s_pending") as student:
+        student.post("/diagnostic/start", json={"classId": "cls_1", "gradeBand": "g34"}).raise_for_status()
+        first = student.get("/diagnostic/next-question").raise_for_status().json()["question"]
+        assert first["listeningPlaysRemaining"] == 2
+        play = {"questionId": first["id"], "playId": "first-play"}
+        assert student.post("/diagnostic/listening-plays", json=play | {"questionId": "g34-l02"}).status_code == 409
+        assert student.post("/diagnostic/listening-plays", json=play).raise_for_status().json() == {"remainingPlays": 1}
+        student.post("/auth/logout").raise_for_status()
+
+    with login(app, "s_pending") as student:
+        current = student.get("/diagnostic/next-question").raise_for_status().json()["question"]
+        assert current["id"] == first["id"] and current["listeningPlaysRemaining"] == 1
+        assert student.post("/diagnostic/listening-plays", json=play).raise_for_status().json() == {"remainingPlays": 1}
+        second_play = student.post("/diagnostic/listening-plays", json=play | {"playId": "second-play"})
+        assert second_play.raise_for_status().json() == {"remainingPlays": 0}
+        third_play = student.post("/diagnostic/listening-plays", json=play | {"playId": "third-play"})
+        assert third_play.status_code == 409 and third_play.json()["code"] == "DIAGNOSTIC_LISTENING_LIMIT"
+        answer(student, first["id"], None).raise_for_status()
+        next_item = student.get("/diagnostic/next-question").raise_for_status().json()["question"]
+        assert next_item["id"] == "g34-l02" and next_item["listeningPlaysRemaining"] == 2
+        assert student.post("/diagnostic/listening-plays", json=play).status_code == 409
+
+
 def test_diagnostic_grading_gates_aggregate_and_completion():
     app = create_app()
     with login(app, "s_pending") as student:
@@ -213,6 +238,17 @@ def test_attached_assessment_uses_pinned_form_and_source_scoring(band, other, fi
         assert summary["reading"] == summary["listening"]
         assert summary["overall"] == {"score": 200, "maxScore": 200, "level": "advanced"}
         assert all(subject["level"] == "advanced" for subject in summary["subjects"])
+        assert {subject["area"]: subject["maxScore"] for subject in summary["subjects"]} == {
+            "korean": 34, "math": 35, "social": 36, "science": 43,
+        }
+        assert {(part["area"], part["skill"]): part["maxScore"] for part in summary["areaParts"]} == {
+            ("korean", "listening"): 12, ("korean", "reading"): 22,
+            ("math", "listening"): 19, ("math", "reading"): 16,
+            ("social", "listening"): 14, ("social", "reading"): 22,
+            ("science", "listening"): 33, ("science", "reading"): 10,
+            ("daily", "listening"): 22, ("daily", "reading"): 30,
+        }
+        assert all(part["score"] == part["maxScore"] for part in summary["areaParts"])
         assert summary["communication"] == {
             "score": 52, "maxScore": 52, "percent": 100, "questionCount": 11, "status": "adequate",
         }
@@ -247,6 +283,18 @@ def test_attached_assessment_respects_raw_point_criterion_and_failed_thresholds(
     assert summary.communication.status == "needs_improvement"
     assert results.areas[0].score == 2 * korean.percent
     assert results.areas[0].level == korean.level
+
+
+def test_raw_reading_points_follow_the_selected_grade_form():
+    from app.diagnostic.grading import grade
+
+    for band, area in [("g34", "science"), ("g56", "korean")]:
+        form = load_assessment_forms()[band]
+        answers = {item.display.id: item.correct_option_id if item.display.id == f"{band}-r11" else None
+                   for item in form.questions}
+        summary = grade(form, answers).assessmentSummary
+        assert next(part for part in summary.areaParts if part.score).area == area
+        assert {item.area: item.score for item in summary.subjects if item.score} == {area: 6}
 
 
 def test_started_legacy_attempt_cannot_be_replaced_by_grade_selection():

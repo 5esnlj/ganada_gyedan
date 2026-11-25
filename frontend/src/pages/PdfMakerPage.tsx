@@ -8,9 +8,8 @@ import {
 import type { AreaCode } from '../api/wire';
 import { Button, LevelPill, MaterialCard, PageHeader, UploadBox } from '../components';
 import { useApi } from '../hooks';
-import {
-  openSourcePdf, toConversionPages, type PdfSource,
-} from '../pdf';
+import { toConversionPages, type PdfSource } from '../pdf';
+import { usePdfDocument } from '../pdf/usePdfDocument';
 import { hasPositionedParagraphs, makeEditionPdf, PdfComparison, verifyEditionLayout } from './PdfComparison';
 import styles from './PdfMakerPage.module.css';
 import { errorMessage, Failure, languageLabel, LEVEL_LABELS, Panel, SolarKey, useAction } from './teacherWorkspace';
@@ -57,8 +56,12 @@ function SourceUpload({ classId, onCreated, onCancel }: {
   return (
     <Panel title="원본 PDF 등록">
       <form className={styles.form} onSubmit={upload}>
-        <UploadBox onFiles={select} />
-        <p role="status" className={styles.muted}>{file ? file.name : '텍스트가 있는 PDF를 올려 주세요. 최대 10 MiB입니다.'}</p>
+        {file ? <p role="status" className={styles.uploadedFile}>
+          <FileText size={18} aria-hidden="true" /><span>{file.name}</span>
+        </p> : <>
+          <UploadBox onFiles={select} />
+          <p className={styles.muted}>텍스트가 있는 PDF를 올려 주세요. 최대 10 MiB입니다.</p>
+        </>}
         <label>자료 제목<input value={title} onChange={(event) => setTitle(event.target.value)} required maxLength={200} /></label>
         <label>단원 이름<input value={unit} onChange={(event) => setUnit(event.target.value)} maxLength={150} /></label>
         {fileError && <Failure message={fileError} />}
@@ -87,7 +90,7 @@ function SourceList({ classId, subject, onSelect }: {
           <div className={styles.cards}>
             {data.items.map((source) => (
               <MaterialCard
-                key={source.id} subject={SUBJECT_LABELS[source.subject]} unit={source.unit}
+                key={source.id} subject={SUBJECT_LABELS[source.subject]}
                 pageTitle={source.title} name={source.title} date={date.format(new Date(source.createdAt))}
                 onClick={() => onSelect(source)}
               />
@@ -96,34 +99,6 @@ function SourceList({ classId, subject, onSelect }: {
         ) : <p className={styles.muted}>등록된 원본 자료가 없습니다.</p>}
     </section>
   );
-}
-
-function useSourcePdf(fileId: string | null) {
-  const [pdf, setPdf] = useState<PdfSource | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [revision, setRevision] = useState(0);
-
-  useEffect(() => {
-    let mounted = true;
-    let opened: PdfSource | null = null;
-    setPdf(null);
-    setError(null);
-    if (fileId) {
-      void pdfMakerApi.sourcePdf(fileId).then(openSourcePdf).then((document) => {
-        if (!mounted) return document.close();
-        opened = document;
-        setPdf(document);
-      }).catch((cause: unknown) => {
-        if (mounted) setError(errorMessage(cause));
-      });
-    }
-    return () => {
-      mounted = false;
-      if (opened) void opened.close().catch(() => undefined);
-    };
-  }, [fileId, revision]);
-
-  return { pdf, error, retry: () => setRevision((value) => value + 1) };
 }
 
 function SourceSettings({ classId, source, pdf, targets, onQueued }: {
@@ -261,7 +236,7 @@ function SourceWorkspace({ classId, source, onReview }: {
   source: PdfSourceOut;
   onReview: (id: string) => void;
 }) {
-  const original = useSourcePdf(source.fileId);
+  const original = usePdfDocument(source.fileId, pdfMakerApi.sourcePdf);
   const jobs = useJobs(classId, source.id);
   const roster = useApi(() => pdfMakerApi.students(classId), [classId]);
   const editions = useApi(() => pdfMakerApi.editions(classId), [classId]);
@@ -350,7 +325,7 @@ function EditionEditor({ source, initial, initialVersion, onReload }: {
   const [version, setVersion] = useState(initialVersion);
   const [edited, setEdited] = useState<MaterialContent>(initial.content);
   const [editingOnPage, setEditingOnPage] = useState(false);
-  const original = useSourcePdf(source.fileId);
+  const original = usePdfDocument(source.fileId, pdfMakerApi.sourcePdf);
   const pages = useReviewPages(original.pdf, edition.content);
   const { busy, error, run } = useAction();
   const dirty = edited.paragraphs.some((paragraph, index) => paragraph.text !== edition.content.paragraphs[index].text);

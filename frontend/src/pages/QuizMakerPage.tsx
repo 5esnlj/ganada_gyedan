@@ -135,16 +135,14 @@ function NewQuiz({ classId, subject, students, onQueued }: {
   );
 }
 
-function QuestionEditor({ question, sentences, onCancel, onSave, busy }: {
+function QuestionEditor({ question, onCancel, onSave, busy }: {
   question: TeacherQuestion; busy: boolean; onCancel: () => void; onSave: (body: QuestionEdit) => void;
-  sentences: Map<string, string>;
 }) {
   const [prompt, setPrompt] = useState(question.prompt);
   const [choices, setChoices] = useState(question.choices);
   const [correct, setCorrect] = useState(question.correctOptionId);
   const [explanation, setExplanation] = useState(question.explanation);
-  const [evidence, setEvidence] = useState(question.sourceSentenceIds.filter((id) => sentences.has(id)));
-  const valid = prompt.trim() && explanation.trim() && choices.every((c) => c.text.trim()) && evidence.length > 0;
+  const valid = prompt.trim() && explanation.trim() && choices.every((c) => c.text.trim());
   return (
     <div className={styles.form}>
       <label>문제<textarea rows={2} value={prompt} onChange={(e) => setPrompt(e.target.value)} maxLength={10000} /></label>
@@ -157,21 +155,11 @@ function QuestionEditor({ question, sentences, onCancel, onSave, busy }: {
         </label>
       ))}
       <label>해설<textarea rows={2} value={explanation} onChange={(e) => setExplanation(e.target.value)} maxLength={10000} /></label>
-      <fieldset className={styles.targets} disabled={busy}>
-        <legend>정답의 근거 문장</legend>
-        {[...sentences].map(([id, text]) => (
-          <label key={id} className={styles.target}>
-            <input type="checkbox" checked={evidence.includes(id)}
-              onChange={() => setEvidence((rows) => rows.includes(id) ? rows.filter((row) => row !== id) : [...rows, id])} />
-            <span>{text}</span>
-          </label>
-        ))}
-      </fieldset>
       <div className={styles.actions}>
         <Button variant="secondary" onClick={onCancel} disabled={busy}>취소</Button>
         <Button disabled={busy || !valid} onClick={() => onSave({
           prompt: prompt.trim(), choices: choices.map((c) => ({ ...c, text: c.text.trim() })), correctOptionId: correct,
-          explanation: explanation.trim(), sourceSentenceIds: evidence, maxPoints: question.maxPoints,
+          explanation: explanation.trim(), sourceSentenceIds: question.sourceSentenceIds, maxPoints: question.maxPoints,
         })}>저장</Button>
       </div>
     </div>
@@ -226,7 +214,7 @@ function QuizReview({ quizId, studentName, onChanged }: { quizId: string; studen
           {question.isChallenge && <Chip selected>도전</Chip>}
         </span>
       </div>
-      {editing ? <QuestionEditor key={question.id} question={question} sentences={sentences} busy={busy} onCancel={() => setEditing(false)}
+      {editing ? <QuestionEditor key={question.id} question={question} busy={busy} onCancel={() => setEditing(false)}
         onSave={(body) => apply(() => quizApi.editQuestion(data.id, question.id, body, current.etag))} />
         : <>
           <p className={quiz.prompt}>{question.prompt}</p>

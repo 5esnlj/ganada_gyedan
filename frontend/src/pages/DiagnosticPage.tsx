@@ -1,6 +1,6 @@
 import { Pause, Play } from 'lucide-react';
 import { Fragment, useEffect, useId, useRef, useState, type ReactNode } from 'react';
-import { api, SUBJECT_LABELS } from '../api';
+import { api, ApiError, SUBJECT_LABELS } from '../api';
 import type {
   AreaCode, DiagnosticNext, DiagnosticResults, DiagnosticStatus, GradeBand, LevelCode,
 } from '../api/wire';
@@ -25,7 +25,8 @@ const SKILL_LABELS = { listening: '듣기', reading: '읽기' } as const;
 const OPTION_NUMBERS = ['①', '②', '③', '④'];
 const AREAS: AreaCode[] = ['daily', 'korean', 'math', 'social', 'science'];
 const scoreFormat = new Intl.NumberFormat('ko-KR', { maximumFractionDigits: 2 });
-const scoreLabel = (score: number, maxScore: number) => `${scoreFormat.format(score)} / ${scoreFormat.format(maxScore)}점`;
+const scoreLabel = (score: number, maxScore: number) => Number.isFinite(score) && Number.isFinite(maxScore)
+  ? `${scoreFormat.format(score)} / ${scoreFormat.format(maxScore)}점` : '점수 정보 없음';
 
 type Question = NonNullable<DiagnosticNext['question']>;
 type Assessment =
@@ -162,9 +163,14 @@ function MarkedText({ text, spans }: { text: string; spans?: Question['promptSpa
   })}</>;
 }
 
-function QuestionAudio({ src }: { src: string }) {
+function QuestionAudio({ src, questionId, initialRemaining }: { src: string; questionId: string; initialRemaining: number }) {
   const audioRef = useRef<HTMLAudioElement>(null);
-  const [playback, setPlayback] = useState<'ready' | 'loading' | 'playing' | 'error'>('ready');
+  const play = useRef<{ id: string; registered: boolean } | null>(null);
+  const starting = useRef(false);
+  const [remaining, setRemaining] = useState(initialRemaining);
+  const [playback, setPlayback] = useState<'ready' | 'loading' | 'playing' | 'paused'>('ready');
+  const [error, setError] = useState<string | null>(null);
+  const exhausted = remaining === 0 && play.current === null;
 
   useEffect(() => {
     const audio = audioRef.current;
@@ -173,18 +179,35 @@ function QuestionAudio({ src }: { src: string }) {
 
   async function togglePlayback() {
     const audio = audioRef.current;
-    if (!audio) return;
+    if (!audio || starting.current || exhausted) return;
     if (!audio.paused) {
       audio.pause();
       return;
     }
-    if (playback === 'error') audio.load();
+    starting.current = true;
+    setError(null);
     setPlayback('loading');
     try {
+      const current = play.current ??= { id: crypto.randomUUID(), registered: false };
+      if (!current.registered) {
+        const result = await api.registerDiagnosticListen(questionId, current.id);
+        if (audioRef.current !== audio) return;
+        current.registered = true;
+        setRemaining(result.remainingPlays);
+      }
+      if (audio.error) audio.load();
       await audio.play();
       setPlayback('playing');
-    } catch {
-      setPlayback('error');
+    } catch (cause) {
+      if (audioRef.current !== audio) return;
+      if (cause instanceof ApiError && cause.code === 'DIAGNOSTIC_LISTENING_LIMIT') {
+        play.current = null;
+        setRemaining(0);
+      }
+      setError(cause instanceof ApiError ? cause.message : '음원을 재생할 수 없습니다. 다시 시도해 주세요.');
+      setPlayback('ready');
+    } finally {
+      starting.current = false;
     }
   }
 
@@ -194,20 +217,21 @@ function QuestionAudio({ src }: { src: string }) {
         ref={audioRef}
         src={src}
         preload="metadata"
-        onPause={() => setPlayback('ready')}
-        onEnded={() => setPlayback('ready')}
-        onError={() => setPlayback('error')}
+        onPause={() => setPlayback('paused')}
+        onEnded={() => { play.current = null; setPlayback('ready'); }}
+        onError={() => setError('음원을 재생할 수 없습니다. 다시 시도해 주세요.')}
       />
       <Button
         className={styles.listenButton}
         variant="secondary"
         icon={playback === 'playing' ? <Pause size={16} aria-hidden="true" /> : <Play size={16} aria-hidden="true" />}
-        disabled={playback === 'loading'}
+        disabled={playback === 'loading' || exhausted}
         onClick={() => void togglePlayback()}
       >
-        {{ ready: '듣기', loading: '음원 준비 중…', playing: '일시정지', error: '다시 듣기' }[playback]}
+        {{ ready: '듣기', loading: '음원 준비 중…', playing: '일시정지', paused: '이어서 듣기' }[playback]}
       </Button>
-      {playback === 'error' && <p className={styles.audioError} role="alert">음원을 재생할 수 없습니다. 다시 들어 보세요.</p>}
+      <span className={styles.sectionProgress} role="status">남은 재생 {remaining}회</span>
+      {error && <p className={styles.audioError} role="alert">{error}</p>}
     </>
   );
 }
@@ -277,7 +301,9 @@ function QuestionPanel({ progress, question, onSaved }: {
         <div className={styles.questionHeader}>
           <div className={styles.sectionLabel}>
             <span className={styles.skill} data-skill={question.skill}>{SKILL_LABELS[question.skill]}</span>
-            {question.audioUrl && <QuestionAudio src={question.audioUrl} />}
+            {question.audioUrl && question.listeningPlaysRemaining != null && <QuestionAudio
+              src={question.audioUrl} questionId={question.id} initialRemaining={question.listeningPlaysRemaining}
+            />}
           </div>
           <span className={styles.sectionProgress}>{SUBJECT_LABELS[question.area]} · {sectionProgress}</span>
         </div>
@@ -322,9 +348,10 @@ function QuestionPanel({ progress, question, onSaved }: {
   );
 }
 
-function ResultCard({ title, result }: {
+function ResultCard({ title, result, status }: {
   title: string;
-  result?: { score: number; maxScore: number; level: LevelCode };
+  result?: { score: number; maxScore: number; level?: LevelCode };
+  status?: string;
 }) {
   return (
     <div className={styles.result}>
@@ -332,7 +359,7 @@ function ResultCard({ title, result }: {
       {result ? (
         <>
           <p className={styles.score}>{scoreLabel(result.score, result.maxScore)}</p>
-          <LevelPill level={LEVEL_LABELS[result.level]} />
+          {status ? <strong>{status}</strong> : result.level && <LevelPill level={LEVEL_LABELS[result.level]} />}
         </>
       ) : <p className={styles.subtle}>결과 없음</p>}
     </div>
@@ -377,9 +404,14 @@ function AssessmentSummary({ summary }: { summary: NonNullable<DiagnosticResults
 function Results({ results, onContinue }: { results: DiagnosticResults; onContinue?: () => Promise<void> }) {
   const [area, setArea] = useState<AreaCode>('daily');
   const { busy, error, run } = useAssessmentAction();
-  const listening = results.parts.find((part) => part.area === area && part.skill === 'listening');
-  const reading = results.parts.find((part) => part.area === area && part.skill === 'reading');
-  const overall = results.areas.find((result) => result.area === area);
+  const summary = results.assessmentSummary;
+  const communication = area === 'daily' ? summary?.communication : undefined;
+  const parts = summary?.areaParts?.length ? summary.areaParts : results.parts;
+  const listening = parts.find((part) => part.area === area && part.skill === 'listening');
+  const reading = parts.find((part) => part.area === area && part.skill === 'reading');
+  const overall = communication ?? summary?.subjects.find((subject) => subject.area === area)
+    ?? results.areas.find((result) => result.area === area);
+  const communicationStatus = communication && (communication.status === 'adequate' ? '양호' : '보완 필요');
 
   return (
     <Page title="진단평가 결과" description={results.isSynthetic ? '연습용 진단 결과입니다.' : undefined}>
@@ -392,9 +424,9 @@ function Results({ results, onContinue }: { results: DiagnosticResults; onContin
           ))}
         </div>
         <div className={styles.results} data-tone={SUBJECT_TONE[SUBJECT_LABELS[area]]}>
-          <ResultCard title="듣기" result={listening} />
-          <ResultCard title="읽기" result={reading} />
-          <ResultCard title="영역 종합" result={overall} />
+          <ResultCard title="듣기" result={communication && listening ? { score: listening.score, maxScore: listening.maxScore } : listening} />
+          <ResultCard title="읽기" result={communication && reading ? { score: reading.score, maxScore: reading.maxScore } : reading} />
+          <ResultCard title={communication ? '의사소통' : '영역 종합'} result={overall} status={communicationStatus} />
         </div>
       </section>
       {onContinue && (

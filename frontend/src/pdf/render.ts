@@ -1,12 +1,15 @@
+import type { PhraseChange } from '../api/wire';
 import { renderHelpPages } from './appendix';
 import { loadPreviewFont, previewFont } from './fonts';
+import { placePhrases, type PhrasePlacement } from './phrases';
 import { imageRaster, releaseRaster, rgb, ringMode, textRectangle, wrapLine } from './raster';
 import type { Raster, Rectangle } from './raster';
 import type { Box, ConvertedPdfContent, PdfBlock, PdfHelpContent, PdfPage, PdfPreview, TextRect } from './types';
 
 interface Overlay {
   font: string;
-  lines: { x: number; baseline: number; text: string }[];
+  size: number;
+  lines: { x: number; baseline: number; text: string; start: number }[];
 }
 
 function chooseFont(block: PdfBlock, size: number): string {
@@ -31,8 +34,10 @@ function fitText(context: CanvasRenderingContext2D, page: PdfPage, block: PdfBlo
     context.font = font;
     const lines: Overlay['lines'] = [];
     let fits = true;
+    let offset = 0;
     for (const paragraph of text.split('\n')) {
       let remaining = paragraph.trim();
+      let start = offset + paragraph.length - paragraph.trimStart().length;
       do {
         const baseline = firstBaseline + lines.length * pitch;
         if (baseline + size * 0.22 > bottom + 1.5) { fits = false; break; }
@@ -41,14 +46,59 @@ function fitText(context: CanvasRenderingContext2D, page: PdfPage, block: PdfBlo
           ? Math.min(fullWidth, block.wrap.x - block.x) : fullWidth;
         const [line, rest] = wrapLine(context, remaining, width - indent);
         if (!line && remaining) { fits = false; break; }
-        lines.push({ x: block.x + indent, baseline, text: line });
+        lines.push({ x: block.x + indent, baseline, text: line, start });
+        start += remaining.length - rest.length;
         remaining = rest;
       } while (remaining);
       if (!fits) break;
+      offset += paragraph.length + 1;
     }
-    if (fits) return { font, lines };
+    if (fits) return { font, size, lines };
   }
   return null;
+}
+
+function fitParagraph(
+  context: CanvasRenderingContext2D, page: PdfPage, block: PdfBlock, text: string, changes: readonly PhraseChange[],
+) {
+  const deferred = new Set<PhraseChange>();
+  let plan = placePhrases(text, changes, deferred);
+  let overlay = fitText(context, page, block, plan.text);
+  if (!overlay && changes.length) {
+    context.font = chooseFont(block, block.fontSize);
+    const revertOrder = changes.map((change) => ({
+      change,
+      growth: context.measureText(change.replacement).width - context.measureText(change.original).width,
+    })).sort((a, b) => b.growth - a.growth);
+    for (const { change } of revertOrder) {
+      deferred.add(change);
+      plan = placePhrases(text, changes, deferred);
+      if (!plan.placements.length) break;
+      overlay = fitText(context, page, block, plan.text);
+      if (overlay) break;
+    }
+  }
+  return overlay ? { overlay, placements: plan.placements, deferred } : null;
+}
+
+function drawOverlay(context: CanvasRenderingContext2D, block: PdfBlock, overlay: Overlay, placements: PhrasePlacement[]) {
+  context.font = overlay.font;
+  context.fillStyle = block.color;
+  for (const line of overlay.lines) context.fillText(line.text, line.x, line.baseline);
+  if (!placements.length) return;
+
+  context.fillStyle = '#a54436';
+  for (const line of overlay.lines) {
+    for (const placement of placements) {
+      const start = Math.max(placement.start, line.start) - line.start;
+      const end = Math.min(placement.end - line.start, line.text.length);
+      if (start >= end) continue;
+      const left = context.measureText(line.text.slice(0, start)).width;
+      const right = context.measureText(line.text.slice(0, end)).width;
+      context.fillRect(line.x + left, line.baseline + overlay.size * 0.12, right - left,
+        Math.max(0.6, overlay.size * 0.055));
+    }
+  }
 }
 
 interface Patch extends Rectangle {
@@ -159,7 +209,7 @@ export function canEditPdfBlock(
 
 export async function renderConvertedPages(pages: readonly PdfPage[], content: ConvertedPdfContent): Promise<PdfPreview> {
   await loadPreviewFont();
-  const output: PdfPreview = { pages: [], notices: [], unplacedBlockIds: [] };
+  const output: PdfPreview = { pages: [], notices: [], unplacedBlockIds: [], phrases: [] };
   const paragraphs = new Map(content.paragraphs.map(paragraph => [paragraph.id, paragraph]));
   const omitted = new Set(content.omittedPages);
   const limitedSupport = new Set(content.limitedSupportPages);
@@ -177,12 +227,12 @@ export async function renderConvertedPages(pages: readonly PdfPage[], content: C
     }
     const changes = omittedPage ? [] : page.blocks.flatMap(block => {
       const paragraph = paragraphs.get(block.id);
-      const text = paragraph?.text.replace(/‸/g, ' ').trim();
+      const text = paragraph?.text.replace(/‸/g, ' ');
       const sourceText = block.text.replace(/‸/g, ' ').trim();
-      if (!canEditPdfBlock(page, block, content) || !text || text === sourceText || paragraph?.page !== page.number) {
+      if (!canEditPdfBlock(page, block, content) || !text?.trim() || text.trim() === sourceText || paragraph?.page !== page.number) {
         return [];
       }
-      return [{ block, text }];
+      return [{ block, text, phrases: paragraph.phraseChanges ?? [] }];
     });
     if (!changes.length && !page.blocks.some(block => hidden.has(block.id))) {
       output.pages.push(original);
@@ -193,33 +243,40 @@ export async function renderConvertedPages(pages: readonly PdfPage[], content: C
     const { canvas, context } = raster;
     try {
       const pixels = context.getImageData(0, 0, canvas.width, canvas.height).data;
-      const overlays: { block: PdfBlock; overlay: Overlay }[] = [];
+      const overlays: { block: PdfBlock; overlay: Overlay; placements: PhrasePlacement[] }[] = [];
       let fallbacks = 0;
-      for (const { block, text } of changes) {
-        const overlay = fitText(context, page, block, text);
+      let deferredCount = 0;
+      for (const { block, text, phrases } of changes) {
         const patches = runPatches(raster, pixels, block.runs, page.scale, false);
-        if (!overlay || !patches.length || patches.some(patch => patch === null)) {
+        const fitted = patches.length && patches.every(patch => patch !== null)
+          ? fitParagraph(context, page, block, text, phrases) : null;
+        for (const change of phrases) {
+          const applied = fitted !== null && !fitted.deferred.has(change);
+          output.phrases.push({ blockId: block.id, page: page.number, change, applied });
+          if (!applied) deferredCount++;
+        }
+        if (!fitted) {
           output.unplacedBlockIds.push(block.id);
-          fallbacks++;
+          if (!phrases.length) fallbacks++;
           continue;
         }
         fillPatches(context, patches.filter(patch => patch !== null));
-        overlays.push({ block, overlay });
+        overlays.push({ block, overlay: fitted.overlay, placements: fitted.placements });
       }
       hideBlocks(raster, pixels, page, hidden);
       context.save();
       context.scale(page.scale, page.scale);
       context.textBaseline = 'alphabetic';
-      for (const { block, overlay } of overlays) {
-        context.font = overlay.font;
-        context.fillStyle = block.color;
-        for (const line of overlay.lines) context.fillText(line.text, line.x, line.baseline);
-      }
+      for (const { block, overlay, placements } of overlays) drawOverlay(context, block, overlay, placements);
       context.restore();
       if (fallbacks) {
         output.notices.push(`${page.number}쪽 문단 ${fallbacks}개는 배치에 맞지 않거나 배경이 복잡해 원본을 유지했습니다.`);
       }
-      output.pages.push({ ...original, imageUrl: canvas.toDataURL('image/jpeg', 0.9) });
+      if (deferredCount) {
+        output.notices.push(`${page.number}쪽 표현 ${deferredCount}개는 원문을 남기고 PDF 도움말에 쉬운 표현을 담았습니다.`);
+      }
+      output.pages.push(overlays.length || page.blocks.some(block => hidden.has(block.id))
+        ? { ...original, imageUrl: canvas.toDataURL('image/jpeg', 0.9) } : original);
     } finally {
       releaseRaster(raster);
     }
@@ -233,7 +290,7 @@ export async function exportPreviewPdf(preview: PdfPreview, help?: PdfHelpConten
   const { jsPDF } = await import('jspdf');
   const orientation = (page: { width: number; height: number }) => page.width > page.height ? 'landscape' : 'portrait';
   const pdf = new jsPDF({ unit: 'pt', format: [first.width, first.height], orientation: orientation(first) });
-  const appendix = help ? await renderHelpPages(help) : [];
+  const appendix = help ? await renderHelpPages(help, preview.phrases.filter(phrase => !phrase.applied)) : [];
   [...preview.pages, ...appendix].forEach((page, index) => {
     if (index) pdf.addPage([page.width, page.height], orientation(page));
     pdf.addImage(page.imageUrl, 'JPEG', 0, 0, page.width, page.height);

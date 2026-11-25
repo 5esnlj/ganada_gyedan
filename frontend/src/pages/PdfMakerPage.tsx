@@ -353,7 +353,10 @@ function EditionEditor({ source, initial, initialVersion, onReload }: {
     || positioned === false;
 
   function changeParagraph(id: string, text: string) {
-    setEdited((content) => ({ ...content, paragraphs: content.paragraphs.map((p) => p.id === id ? { ...p, text } : p) }));
+    setEdited((content) => ({
+      ...content,
+      paragraphs: content.paragraphs.map((p) => p.id === id ? { ...p, text, phraseChanges: [] } : p),
+    }));
   }
 
   async function saveContent(content: MaterialContent) {

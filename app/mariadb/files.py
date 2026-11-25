@@ -16,14 +16,14 @@ def object_root(key: str) -> Path:
     return Path(os.getenv("GANADA_DB_FILES_DIR", str(default))).resolve()
 
 
-def read_source_file(file):
+def read_source_file(file, max_bytes=MAX_UPLOAD_BYTES):
     root = object_root(file["objectKey"])
     path = (root / file["objectKey"]).resolve()
-    if not path.is_relative_to(root) or file["size"] > MAX_UPLOAD_BYTES:
+    if not path.is_relative_to(root) or file["size"] > max_bytes:
         fail(404, "NOT_FOUND", "파일을 찾을 수 없습니다.")
     try:
         with path.open("rb") as handle:
-            data = handle.read(MAX_UPLOAD_BYTES + 1)
+            data = handle.read(max_bytes + 1)
     except OSError:
         fail(404, "NOT_FOUND", "파일을 찾을 수 없습니다.")
     if len(data) != file["size"] or sha256(data).digest() != file["checksum"]:

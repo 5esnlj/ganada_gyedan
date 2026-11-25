@@ -38,6 +38,12 @@ export function hasPositionedParagraphs(pages: PdfPage[], content: MaterialConte
   return pages.some((page) => page.blocks.some((block) => paragraphs.get(block.id) === page.number));
 }
 
+export async function makeEditionPdf(originals: PdfPage[], content: MaterialContent) {
+  const prepared = previewContent(content, originals[0].number);
+  const full = await renderConvertedPages(originals, prepared);
+  return exportPreviewPdf(full, prepared);
+}
+
 function bounds(page: PdfPage, block: PdfBlock) {
   const left = Math.max(0, block.x);
   const top = Math.max(0, block.y);
@@ -192,9 +198,7 @@ export function PdfComparison({ originals, content, canEdit, canDownload, title,
 
   function download() {
     void run(async () => {
-      const prepared = previewContent(content, firstPage);
-      const full = await renderConvertedPages(originals, prepared);
-      const url = URL.createObjectURL(await exportPreviewPdf(full, prepared));
+      const url = URL.createObjectURL(await makeEditionPdf(originals, content));
       const link = document.createElement('a');
       link.href = url;
       link.download = `${title}-전환자료.pdf`;

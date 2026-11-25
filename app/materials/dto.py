@@ -126,6 +126,7 @@ class MaterialOut(BaseModel):
     publishedAt: str | None
     reviewedAt: str | None
     isRecentPublished: bool
+    hasPdf: bool = False
     unitNumber: str | None = None
     thumbnailUrl: str | None = None
     originalContent: str | None = None

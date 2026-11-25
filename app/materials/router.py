@@ -12,7 +12,7 @@ from app.core.review import check_version, set_etag
 from app.core.state import Store
 from app.materials import service
 from app.materials.dto import MaterialOut, MaterialPatch, PdfInfo, SourceCreate, SourceOut, UploadOut
-from app.materials.pdf import MAX_UPLOAD_BYTES, extract_pdf_pages
+from app.materials.pdf import MAX_CONVERTED_PDF_BYTES, MAX_UPLOAD_BYTES, extract_pdf_pages, validate_converted_pdf
 from app.mariadb.authoring import save_revision, save_source
 from app.mariadb.files import read_source_file
 from app.mariadb.store import MariaDBStore
@@ -119,6 +119,30 @@ def material(materialId: str, request: Request, response: Response, store: Store
     return service.material_view(store, user, record)
 
 
+@router.get(
+    "/materials/{materialId}/download",
+    response_class=Response,
+    responses={200: {"content": {"application/pdf": {}}, "description": "배포된 전환 PDF 다운로드"}},
+    tags=["전환 자료"],
+)
+def download_material(materialId: str, request: Request, store: Store):
+    user = auth(request, learning=True)
+    record = service.require_material(store, user, materialId)
+    file = record.get("convertedFile")
+    if record["status"] != "published" or not file:
+        fail(404, "NOT_FOUND", "배포된 PDF가 없습니다.")
+    filename = quote(f"{record['title']}-학습자료.pdf", safe="")
+    return Response(
+        read_source_file(file, MAX_CONVERTED_PDF_BYTES) if "objectKey" in file else file["data"],
+        media_type="application/pdf",
+        headers={
+            "Content-Disposition": f"attachment; filename=\"material.pdf\"; filename*=UTF-8''{filename}",
+            "Cache-Control": "private, no-store",
+            "X-Content-Type-Options": "nosniff",
+        },
+    )
+
+
 @router.patch("/materials/{materialId}", response_model=MaterialOut, tags=["전환 자료"])
 def patch_material(
     materialId: str, body: MaterialPatch, request: Request, response: Response, store: Store
@@ -140,14 +164,21 @@ def _transition(
     request: Request,
     response: Response,
     store: Store,
+    file: UploadFile | None = None,
 ) -> MaterialOut:
     teacher = auth(request, "teacher")
     record = service.require_material(store, teacher, material_id, write=True)
     check_version(request, record)
     expected = record["version"]
+    pdf = None
+    if file is not None:
+        pdf = file.file.read(MAX_CONVERTED_PDF_BYTES + 1)
+        validate_converted_pdf(pdf)
     service.transition_material(store, teacher, record, target)
     if isinstance(store, MariaDBStore):
-        save_revision(record, expected)
+        save_revision(record, expected, pdf)
+    elif pdf is not None:
+        record["convertedFile"] = {"data": pdf}
     set_etag(response, record)
     return service.material_view(store, teacher, record)
 
@@ -158,5 +189,8 @@ def review_material(materialId: str, request: Request, response: Response, store
 
 
 @router.post("/materials/{materialId}/publish", response_model=MaterialOut, tags=["전환 자료"])
-def publish_material(materialId: str, request: Request, response: Response, store: Store):
-    return _transition(materialId, "published", request, response, store)
+def publish_material(
+    materialId: str, request: Request, response: Response, store: Store,
+    file: Annotated[UploadFile | None, File()] = None,
+):
+    return _transition(materialId, "published", request, response, store, file)

@@ -9,8 +9,23 @@ from pypdf.errors import PyPdfError
 from app.core.errors import fail
 
 MAX_UPLOAD_BYTES = 10 * 1024 * 1024
+MAX_CONVERTED_PDF_BYTES = 20 * 1024 * 1024
 MAX_PAGES = 100
 MAX_TEXT_LENGTH = 250_000
+
+
+def validate_converted_pdf(data: bytes) -> None:
+    if len(data) > MAX_CONVERTED_PDF_BYTES:
+        fail(413, "FILE_TOO_LARGE", "배포용 PDF는 최대 20 MiB입니다.")
+    if not data.startswith(b"%PDF-"):
+        fail(415, "PDF_REQUIRED", "배포할 전환 PDF를 확인해 주세요.")
+    try:
+        reader = PdfReader(BytesIO(data))
+        valid = not reader.is_encrypted and 0 < len(reader.pages) <= MAX_PAGES
+    except (PyPdfError, ValueError, TypeError, KeyError, IndexError, OSError, RuntimeError):
+        valid = False
+    if not valid:
+        fail(422, "PDF_UNREADABLE", "배포용 PDF를 열 수 없거나 100쪽을 초과했습니다.")
 
 
 def extract_pdf_pages(data: bytes) -> list[str]:

@@ -1,6 +1,6 @@
 import { config } from '../config';
 import { ApiError, request, requestWithMeta } from './client';
-import type { AreaCode, DiagnosticState, ListOut, MaterialParagraph, PartResult, SourceOut } from './wire';
+import type { AreaCode, DiagnosticState, ListOut, MaterialOut, MaterialParagraph, PartResult, SourceOut } from './wire';
 
 const classPath = (classId: string) => `/classes/${encodeURIComponent(classId)}`;
 const materialPath = (materialId: string) => `/materials/${encodeURIComponent(materialId)}`;
@@ -56,15 +56,14 @@ export type MaterialContent = {
   }[];
 };
 
-export type StudentEdition = {
-  id: string;
+export type StudentEdition = MaterialOut & {
   sourceId: string;
   studentMemberId: string;
-  title: string;
   status: 'draft' | 'reviewed' | 'published' | 'withdrawn';
   version: number;
   revision: number;
   content: MaterialContent;
+  hasPdf?: boolean;
   originalContent?: string | null;
 };
 
@@ -106,7 +105,8 @@ export const pdfMakerApi = {
     body: JSON.stringify({ sourceId, operation: 'convert', studentMemberIds, pages }),
   }),
   jobs: (classId: string) => request<ListOut<GenerationJob>>(`${classPath(classId)}/generation-jobs`),
-  editions: (classId: string) => request<ListOut<StudentEdition>>(`${classPath(classId)}/materials`),
+  editions: (classId: string, subject?: AreaCode) =>
+    request<ListOut<StudentEdition>>(`${classPath(classId)}/materials${subject ? `?subject=${encodeURIComponent(subject)}` : ''}`),
   edition: (materialId: string) => requestWithMeta<StudentEdition>(materialPath(materialId)),
   edit: (materialId: string, content: MaterialContent, version: string) =>
     requestWithMeta<StudentEdition>(materialPath(materialId), {
@@ -116,4 +116,12 @@ export const pdfMakerApi = {
     requestWithMeta<StudentEdition>(`${materialPath(materialId)}/${action}`, {
       method: 'POST', headers: { 'If-Match': version },
     }),
+  publishPdf: (materialId: string, pdf: Blob, version: string) => {
+    const body = new FormData();
+    body.set('file', pdf, 'converted.pdf');
+    return requestWithMeta<StudentEdition>(`${materialPath(materialId)}/publish`, {
+      method: 'POST', headers: { 'If-Match': version }, body,
+    });
+  },
+  downloadUrl: (materialId: string) => `${config.API_BASE_URL.replace(/\/$/, '')}${materialPath(materialId)}/download`,
 };

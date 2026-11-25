@@ -157,6 +157,7 @@ def material_view(state: MemoryStore, user: dict, material: dict) -> MaterialOut
             **material,
             "unit": source["unit"],
             "isRecentPublished": is_recent(material["publishedAt"]),
+            "hasPdf": bool(material.get("convertedFile")),
             "originalContent": source["sourceText"] if user["role"] == "teacher" else None,
         }
     )

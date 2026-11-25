@@ -9,6 +9,7 @@ import { PdfMakerPage } from './pages/PdfMakerPage';
 import { QuizMakerPage } from './pages/QuizMakerPage';
 import { StudentQuizPage } from './pages/StudentQuizPage';
 import { StudentDashboard } from './pages/StudentDashboard';
+import { StudentMaterialsPage, StudentMaterialView } from './pages/StudentMaterialsPage';
 import { TeacherDashboard } from './pages/TeacherDashboard';
 import type { Role } from './types';
 import styles from './App.module.css';
@@ -101,9 +102,15 @@ function Workspace({ session, currentClass, controls, onClassMenu }: {
   const [nav, setNav] = useState<NavKey>('dashboard');
   const [area, setArea] = useState<AreaCode>('daily');
   const [uploadRequest, setUploadRequest] = useState(0);
+  const [materialId, setMaterialId] = useState<string | null>(null);
   const navigate = (next: NavKey) => {
     setUploadRequest(0);
+    setMaterialId(null);
     setNav(next);
+  };
+  const openMaterial = (id: string) => {
+    setMaterialId(id);
+    setNav('materials');
   };
   const openPdfUpload = () => {
     setUploadRequest((previous) => previous + 1);
@@ -111,17 +118,21 @@ function Workspace({ session, currentClass, controls, onClassMenu }: {
   };
   const { data, error, retry } = useApi(async () => teacher ? { kind: 'teacher' as const, value: await api.getClassDashboard(currentClass.id) } : { kind: 'student' as const, value: await api.getStudentHome(currentClass.id, area) }, [currentClass.id, teacher, area]);
   const bottom = data?.kind === 'teacher' ? <div className={styles.pending}><small>검토 기다리는 문항 묶음</small><b>{data.value.pendingReviewCount}건</b></div> : data?.kind === 'student' ? <div className={styles.myLevel}><small>내 수준 · {data.value.subject}</small>{(['listening', 'reading'] as const).map((skill) => <div key={skill}><span><b>{skill === 'listening' ? '듣기' : '읽기'}</b><em>{data.value.myLevel[skill] ?? '진단 미완료'}</em></span><small>{data.value.myLevel[`${skill}Score`] ?? '–'} / 100점</small></div>)}</div> : undefined;
-  return <AppShell topBar={<TopBar userName={session.user.displayName} onLogoClick={() => navigate('dashboard')} />} sidebar={<Sidebar role={session.user.role} className={currentClass.name} active={nav} onNavigate={navigate} onClassMenu={onClassMenu} onCta={teacher ? openPdfUpload : () => navigate('questions')} enabledKeys={teacher ? ['dashboard', 'materials', 'questions'] : ['dashboard', 'questions', 'diagnosis']} bottom={bottom} />}>
+  return <AppShell topBar={<TopBar userName={session.user.displayName} onLogoClick={() => navigate('dashboard')} />} sidebar={<Sidebar role={session.user.role} className={currentClass.name} active={nav} onNavigate={navigate} onClassMenu={onClassMenu} onCta={teacher ? openPdfUpload : () => navigate('questions')} enabledKeys={teacher ? ['dashboard', 'materials', 'questions'] : ['dashboard', 'materials', 'questions', 'diagnosis']} bottom={bottom} />}>
     {controls}
     {!teacher && nav === 'dashboard' && <label className={styles.areaSelect}>진단 수준을 볼 영역 <select value={area} onChange={(e) => setArea(e.target.value as AreaCode)}>{Object.entries(SUBJECT_LABELS).map(([code, label]) => <option key={code} value={code}>{label}</option>)}</select></label>}
     {!teacher && nav === 'diagnosis' ? <DiagnosticResultPage />
       : !teacher && nav === 'questions' ? <StudentQuizPage classId={currentClass.id} />
+      : !teacher && nav === 'materials' ? (materialId
+        ? <StudentMaterialView key={materialId} id={materialId} onBack={() => setMaterialId(null)} />
+        : <StudentMaterialsPage classId={currentClass.id} onOpen={openMaterial} />)
       : teacher && nav === 'questions' && currentClass.teacherSubject
         ? <QuizMakerPage classId={currentClass.id} subject={currentClass.teacherSubject} />
       : teacher && nav === 'materials' && currentClass.teacherSubject
         ? <PdfMakerPage classId={currentClass.id} subject={currentClass.teacherSubject} openUploadRequest={uploadRequest} />
       : error ? <div role="alert"><p>{error.message}</p><Button onClick={retry}>다시 불러오기</Button></div>
       : !data ? <p role="status">불러오는 중…</p>
-      : data.kind === 'teacher' ? <TeacherDashboard data={data.value} /> : <StudentDashboard data={data.value} />}
+      : data.kind === 'teacher' ? <TeacherDashboard data={data.value} />
+        : <StudentDashboard data={data.value} onMaterials={() => navigate('materials')} onMaterial={openMaterial} />}
   </AppShell>;
 }

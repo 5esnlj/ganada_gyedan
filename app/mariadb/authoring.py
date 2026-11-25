@@ -1,6 +1,8 @@
 """MariaDB writes for original PDFs and reviewed teaching drafts."""
 
+from contextlib import contextmanager, nullcontext
 from datetime import datetime, timedelta, timezone
+from hashlib import sha256
 import json
 from uuid import uuid4
 
@@ -11,8 +13,9 @@ from .files import object_root
 from .store import row_version
 
 
-def save_source(source, file):
-    key = f"uploads/{uuid4().hex}.pdf"
+@contextmanager
+def _write_pdf(data, directory):
+    key = f"{directory}/{uuid4().hex}.pdf"
     root = object_root(key)
     path = (root / key).resolve()
     if not path.is_relative_to(root):
@@ -22,7 +25,7 @@ def save_source(source, file):
         path.parent.mkdir(parents=True, exist_ok=True)
         with path.open("xb") as stream:
             created = True
-            stream.write(file["data"])
+            stream.write(data)
     except OSError:
         if created:
             try:
@@ -32,29 +35,7 @@ def save_source(source, file):
         fail(503, "FILE_STORAGE_UNAVAILABLE", "서버에 PDF를 저장하지 못했습니다.")
 
     try:
-        with transaction() as cursor:
-            cursor.execute(
-                """SELECT m.id FROM class_memberships m JOIN classes c ON c.id = m.class_id
-                   WHERE m.class_id = %s AND m.user_id = %s AND m.teacher_subject_code = %s
-                   AND m.role = 'teacher' AND m.status = 'active' AND c.status = 'active' FOR UPDATE""",
-                (source["classId"], source["createdBy"], source["subject"]),
-            )
-            if not cursor.fetchone():
-                fail(404, "NOT_FOUND", "담당 교과의 클래스가 아닙니다.")
-            cursor.execute(
-                """INSERT INTO files
-                   (uploaded_by_user_id, object_key, kind, original_name, mime_type, size_bytes, checksum_sha256, scan_status)
-                   VALUES (%s, %s, 'source_pdf', %s, 'application/pdf', %s, %s, 'clean')""",
-                (source["createdBy"], key, file["name"], file["size"], bytes.fromhex(file["checksum"])),
-            )
-            cursor.execute(
-                """INSERT INTO source_materials
-                   (class_id, created_by_user_id, source_file_id, title, subject_code, unit, source_text)
-                   VALUES (%s,%s,%s,%s,%s,%s,%s)""",
-                (source["classId"], source["createdBy"], cursor.lastrowid, source["title"],
-                 source["subject"], source["unit"], source["sourceText"]),
-            )
-            source_id = str(cursor.lastrowid)
+        yield key
     except Exception:
         # If commit was acknowledged by MariaDB but the connection broke, leave the object intact.
         # A fresh connection checks whether it is referenced before cleaning up.
@@ -66,6 +47,32 @@ def save_source(source, file):
         except Exception:
             pass
         raise
+
+
+def save_source(source, file):
+    with _write_pdf(file["data"], "uploads") as key, transaction() as cursor:
+        cursor.execute(
+            """SELECT m.id FROM class_memberships m JOIN classes c ON c.id = m.class_id
+               WHERE m.class_id = %s AND m.user_id = %s AND m.teacher_subject_code = %s
+               AND m.role = 'teacher' AND m.status = 'active' AND c.status = 'active' FOR UPDATE""",
+            (source["classId"], source["createdBy"], source["subject"]),
+        )
+        if not cursor.fetchone():
+            fail(404, "NOT_FOUND", "담당 교과의 클래스가 아닙니다.")
+        cursor.execute(
+            """INSERT INTO files
+               (uploaded_by_user_id, object_key, kind, original_name, mime_type, size_bytes, checksum_sha256, scan_status)
+               VALUES (%s, %s, 'source_pdf', %s, 'application/pdf', %s, %s, 'clean')""",
+            (source["createdBy"], key, file["name"], file["size"], bytes.fromhex(file["checksum"])),
+        )
+        cursor.execute(
+            """INSERT INTO source_materials
+               (class_id, created_by_user_id, source_file_id, title, subject_code, unit, source_text)
+               VALUES (%s,%s,%s,%s,%s,%s,%s)""",
+            (source["classId"], source["createdBy"], cursor.lastrowid, source["title"],
+             source["subject"], source["unit"], source["sourceText"]),
+        )
+        source_id = str(cursor.lastrowid)
     return source | {"id": source_id, "fileId": source_id}
 
 
@@ -102,7 +109,7 @@ def _datetime(value):
     return datetime.fromisoformat(value).astimezone(timezone.utc).replace(tzinfo=None) if value else None
 
 
-def save_revision(record, expected):
+def save_revision(record, expected, pdf=None):
     """Keep If-Match and the draft mutation in a single transaction."""
     condition = datetime(1970, 1, 1) + timedelta(microseconds=expected)
     fields = {
@@ -113,8 +120,19 @@ def save_revision(record, expected):
         "published_at": _datetime(record["publishedAt"]),
     }
     fields["converted_content"] = _json(record["content"])
-    assignments = ", ".join(f"{key} = %s" for key in fields)
-    with transaction() as cursor:
+    published_file = None
+    with (_write_pdf(pdf, "converted") if pdf is not None else nullcontext()) as key, transaction() as cursor:
+        if key is not None:
+            checksum = sha256(pdf).digest()
+            cursor.execute(
+                """INSERT INTO files
+                   (uploaded_by_user_id, object_key, kind, original_name, mime_type, size_bytes, checksum_sha256, scan_status)
+                   VALUES (%s,%s,'converted_file','converted.pdf','application/pdf',%s,%s,'clean')""",
+                (record["publishedBy"], key, len(pdf), checksum),
+            )
+            fields["converted_file_id"] = cursor.lastrowid
+            published_file = {"objectKey": key, "mimeType": "application/pdf", "size": len(pdf), "checksum": checksum}
+        assignments = ", ".join(f"{column} = %s" for column in fields)
         cursor.execute(
             f"""UPDATE student_materials SET {assignments}, updated_at = GREATEST(UTC_TIMESTAMP(6), TIMESTAMPADD(MICROSECOND, 1, updated_at))
                 WHERE id = %s AND updated_at = %s""",
@@ -126,3 +144,5 @@ def save_revision(record, expected):
         updated = cursor.fetchone()["updated_at"]
     record["version"] = row_version(updated)
     record["updatedAt"] = updated.replace(tzinfo=timezone.utc).isoformat().replace("+00:00", "Z")
+    if published_file is not None:
+        record["convertedFile"] = published_file

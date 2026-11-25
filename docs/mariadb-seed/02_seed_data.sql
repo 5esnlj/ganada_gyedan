@@ -24,11 +24,13 @@ BEGIN NOT ATOMIC
         (5, 's_b', 'student', 'scrypt-v1$43cfc701195ce002d6c6b6f98014e645$e48e20fb616b52c30c19689eaedc44b15d48b637d6d34d7acc4cfc5228c33bb2', '학생 B (가상)', 'vi', NULL, 'active'),
         (6, 's_pending', 'student', 'scrypt-v1$ebdb80759b68fc083e10d74fc0b8d63e$67f62acb910ebef18a533a6b1af9643a0a42ac3591aa215f0a11f813cce63043', 's_pending (가상)', 'mn', NULL, 'active'),
         (7, 's_new', 'student', 'scrypt-v1$2d690d013a6ebdf17d7a4a7f07b02159$f48734afad16644e21403b44b5f15f5246299bf28fffdb6af18f26c77350ec5a', 's_new (가상)', 'ru', NULL, 'active'),
-        (8, 's_outside', 'student', 'scrypt-v1$06a9c9cc41f22d3db59664faee56b710$70352e7e7b1fbf311da024ee66cef9c70aeebd73c4a6efed1be48f5ac497ccb0', 's_outside (가상)', 'ru', NULL, 'active');
+        (8, 's_outside', 'student', 'scrypt-v1$06a9c9cc41f22d3db59664faee56b710$70352e7e7b1fbf311da024ee66cef9c70aeebd73c4a6efed1be48f5ac497ccb0', 's_outside (가상)', 'ru', NULL, 'active'),
+        (9, 't_korean', 'teacher', 'scrypt-v1$384a309fed9eaa1551ae441eaa4c7c0e$ef37f5d5b2c7e08a08fc26be5675a8bc2ac1b1fb4cd08ae177503c883476b7ee', '국어 교사 (가상)', 'ko', @seed_now, 'active');
 
     INSERT INTO classes (id, owner_teacher_id, name, grade_label, academic_year, status) VALUES
         (1, 1, '가상 3학년 2반', '중3', 2026, 'active'),
-        (2, 3, '가상 다른 반', '중2', 2026, 'active');
+        (2, 3, '가상 다른 반', '중2', 2026, 'active'),
+        (3, 9, '가상 독서반', '중3', 2026, 'active');
 
     INSERT INTO class_memberships (id, class_id, user_id, role, teacher_subject_code, status) VALUES
         (1, 1, 1, 'teacher', 'math', 'active'),
@@ -37,7 +39,10 @@ BEGIN NOT ATOMIC
         (4, 1, 4, 'student', NULL, 'active'),
         (5, 1, 5, 'student', NULL, 'active'),
         (6, 1, 6, 'student', NULL, 'active'),
-        (7, 2, 8, 'student', NULL, 'active');
+        (7, 2, 8, 'student', NULL, 'active'),
+        (8, 1, 9, 'teacher', 'korean', 'active'),
+        (9, 3, 9, 'teacher', 'korean', 'active'),
+        (10, 3, 4, 'student', NULL, 'active');
 
     INSERT INTO files (id, uploaded_by_user_id, object_key, kind, original_name, mime_type, size_bytes, checksum_sha256, scan_status) VALUES
         (1, 1, 'seed/src_math_1/sample.pdf', 'source_pdf', 'sample.pdf', 'application/pdf', 615, X'03a6902b9d89f83697793e13aa4bf903ab29145bbaab40612e05521545831c09', 'clean'),
@@ -95,12 +100,24 @@ BEGIN NOT ATOMIC
         (53, 1, 'diagnostic-assets/g56/math/listening/q15.mp3', 'diagnostic_audio', 'q15.mp3', 'audio/mpeg', 201674, X'379383246118167677b06d61cf9d7c98a71e88ef01337d87568a6fa8195082e1', 'clean'),
         (54, 1, 'diagnostic-assets/g56/daily/reading/q01.png', 'diagnostic_image', 'q01.png', 'image/png', 193438, X'373be5d1f0ed5853740ea81c063ea8a2bb059ecf4f14118a3e84728014f131b2', 'clean'),
         (55, 1, 'diagnostic-assets/g56/daily/reading/q02.png', 'diagnostic_image', 'q02.png', 'image/png', 135055, X'7fa874d62ab4e38fdc44906b2ceed10e8951c0d8bfc57a08e4d5d6d64d174484', 'clean'),
-        (56, 1, 'diagnostic-assets/g56/daily/reading/q07.png', 'diagnostic_image', 'q07.png', 'image/png', 284174, X'b1ed432d000f7f0e9abe88734b0d47bfec4d4622dcf4a626b4425a91448a2e0b', 'clean');
+        (56, 1, 'diagnostic-assets/g56/daily/reading/q07.png', 'diagnostic_image', 'q07.png', 'image/png', 284174, X'b1ed432d000f7f0e9abe88734b0d47bfec4d4622dcf4a626b4425a91448a2e0b', 'clean'),
+        (57, 9, 'seed/src_korean_1/sample.pdf', 'source_pdf', 'sample.pdf', 'application/pdf', 132130, X'd44c0d07d52c535f2fe698c404a79b784c59cc215b43d76435c5be2a5023726d', 'clean');
 
     INSERT INTO source_materials (id, class_id, created_by_user_id, source_file_id, title, subject_code, unit, source_text) VALUES
         (1, 1, 1, 1, '비와 비율 (가상)', 'math', '1단원', 'Synthetic mock PDF - not uploaded content'),
         (2, 1, 2, 2, '물질의 상태 (가상)', 'science', '1단원', 'Synthetic mock PDF - not uploaded content'),
-        (3, 2, 3, 3, '비와 비율 (가상)', 'math', '1단원', 'Synthetic mock PDF - not uploaded content');
+        (3, 2, 3, 3, '비와 비율 (가상)', 'math', '1단원', 'Synthetic mock PDF - not uploaded content'),
+        (4, 1, 9, 57, '글의 중심 내용 찾기 (가상)', 'korean', '중심 내용 찾기', '글의 중심 내용 찾기
+글에는 글쓴이가 독자에게 가장 중요하게 전하고 싶은 생각이 있습니다. 이를
+글의 중심 내용이라고 합니다.
+중심 내용을 찾으려면 먼저 제목을 살펴봅니다. 다음으로 본문에서 반복되는
+낱말에 주목합니다. 문단마다 중요한 문장을 찾아 한 문장으로 정리하면 글
+전체의 중심 내용을 파악할 수 있습니다.
+함께 읽기
+우리 반은 점심시간에 책을 서로 바꾸어 읽습니다. 친구가 골라 준 책을 읽다
+보면 평소에 읽지 않던 이야기도 만나게 됩니다. 책을 다 읽은 뒤에는 기억에
+남는 장면을 친구에게 소개합니다.
+윗글의 중심 내용을 한 문장으로 써 봅시다.');
 
     INSERT INTO diagnostic_forms (id, version, status, rules_json, source_reference, published_at) VALUES
         (1, 'form_mock_v1', 'published', '{"rubric":"dml-v1","gradeBand":null,"isSynthetic":true}', '가나다계단 가상 진단', @seed_now),

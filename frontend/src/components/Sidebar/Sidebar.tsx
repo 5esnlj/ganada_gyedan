@@ -42,7 +42,8 @@ export function Sidebar({ role, className, active, onNavigate, onCta, onClassMen
   const Cta = CTA[role];
   return (
     <aside className={styles.sidebar}>
-      <button type="button" className={styles.classSelect} onClick={onClassMenu} disabled={!onClassMenu} title="클래스 선택은 본문 위에서 할 수 있습니다.">
+      <button type="button" className={styles.classSelect} onClick={onClassMenu} disabled={!onClassMenu}
+        title="클래스 선택" aria-label={`${className} · 클래스 선택`}>
         <span>{className}</span>
         <ChevronDown size={20} />
       </button>

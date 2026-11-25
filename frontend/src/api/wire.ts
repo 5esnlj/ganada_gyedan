@@ -58,7 +58,7 @@ export type DiagnosticResults = {
 };
 export type ListOut<T> = { items: T[]; nextCursor: string | null };
 export type SessionOut = { user: { id: string; role: Role; displayName: string; nativeLanguage: string }; csrfToken: string; nextAction: 'classes' | 'diagnostic' | 'join_class' };
-export type ClassOut = { id: string; name: string; teacherSubject: AreaCode | null };
+export type ClassOut = { id: string; name: string; gradeLabel: string; academicYear: number; teacherSubject: AreaCode | null };
 export type PartResult = { area: AreaCode; skill: 'listening' | 'reading'; score: number; maxScore: number; level: LevelCode };
 export type AreaResult = { area: AreaCode; score: number; maxScore: number; level: LevelCode };
 export type ScoreResults = { status: DiagnosticState; questionCount: number; submittedQuestionCount: number; firstCorrectCount: number | null; firstScore: number | null; currentWrongCount: number; unansweredQuestionCount: number };

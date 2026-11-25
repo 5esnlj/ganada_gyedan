@@ -4,6 +4,7 @@ from pathlib import Path
 
 from app.core.state import MemoryStore, timestamp
 from app.identity.passwords import demo_password_hash
+from app.mariadb.files import SEED_FILES
 from app.materials.pdf import extract_source_text
 
 
@@ -19,10 +20,11 @@ def seed_catalog(store: MemoryStore) -> None:
         ("s_pending", "student", "mn", "cls_1", None),
         ("s_new", "student", "ru", None, None),
         ("s_outside", "student", "ru", "cls_2", None),
+        ("t_korean", "teacher", "ko", "cls_1", "korean"),
     ]
     for login, role, language, class_id, subject in people:
         user_id = f"usr_{login}"
-        name = {"s_a": "학생 A", "s_b": "학생 B"}.get(login, login)
+        name = {"s_a": "학생 A", "s_b": "학생 B", "t_korean": "국어 교사"}.get(login, login)
         store.users[user_id] = {
             "id": user_id, "loginId": login, "role": role, "displayName": f"{name} (가상)",
             "nativeLanguage": language, "status": "active", "verified": role == "teacher",
@@ -38,19 +40,26 @@ def seed_catalog(store: MemoryStore) -> None:
     for class_id, name, grade, owner in [
         ("cls_1", "가상 3학년 2반", "중3", "usr_t_math"),
         ("cls_2", "가상 다른 반", "중2", "usr_t_outside"),
+        ("cls_reading", "가상 독서반", "중3", "usr_t_korean"),
     ]:
         store.classes[class_id] = {
             "id": class_id, "name": name, "gradeLabel": grade, "academicYear": 2026,
             "ownerId": owner, "status": "active",
         }
 
-    pdf = (Path(__file__).parent / "fixtures" / "sample.pdf").read_bytes()
-    source_text, sentences = extract_source_text(pdf)
-    for source_id, teacher, title in [
-        ("src_math_1", "t_math", "비와 비율 (가상)"),
-        ("src_science_1", "t_science", "물질의 상태 (가상)"),
-        ("src_outside_1", "t_outside", "비와 비율 (가상)"),
+    for login in ("t_korean", "s_a"):
+        member_id = f"mem_{login}_reading"
+        store.memberships[member_id] = {**store.memberships[f"mem_{login}"], "id": member_id, "classId": "cls_reading"}
+
+    sample = Path(__file__).parent / "fixtures" / "sample.pdf"
+    for source_id, teacher, title, pdf_path in [
+        ("src_math_1", "t_math", "비와 비율 (가상)", sample),
+        ("src_science_1", "t_science", "물질의 상태 (가상)", sample),
+        ("src_outside_1", "t_outside", "비와 비율 (가상)", sample),
+        ("src_korean_1", "t_korean", "글의 중심 내용 찾기 (가상)", SEED_FILES / "seed/src_korean_1/sample.pdf"),
     ]:
+        pdf = pdf_path.read_bytes()
+        source_text, sentences = extract_source_text(pdf)
         member = store.memberships[f"mem_{teacher}"]
         file_id = f"file_{source_id}"
         location = {"classId": member["classId"], "subject": member["teacherSubject"], "createdBy": member["userId"]}

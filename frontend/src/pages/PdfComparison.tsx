@@ -6,6 +6,7 @@ import { Button } from '../components';
 import { useApi } from '../hooks';
 import { canEditPdfBlock, exportPreviewPdf, renderConvertedPages, type PdfBlock, type PdfPage } from '../pdf';
 import { revertPhrase } from '../pdf/phrases';
+import { PdfRedactionError } from '../pdf/render';
 import styles from './PdfMakerPage.module.css';
 import { errorMessage, Failure, Panel, useAction } from './teacherWorkspace';
 
@@ -42,6 +43,10 @@ export async function makeEditionPdf(originals: PdfPage[], content: MaterialCont
   const prepared = previewContent(content, originals[0].number);
   const full = await renderConvertedPages(originals, prepared);
   return exportPreviewPdf(full, prepared);
+}
+
+export async function verifyEditionLayout(originals: PdfPage[], content: MaterialContent) {
+  await renderConvertedPages(originals, previewContent(content, originals[0].number));
 }
 
 function bounds(page: PdfPage, block: PdfBlock) {
@@ -233,7 +238,8 @@ export function PdfComparison({ originals, content, canEdit, canDownload, title,
           <figcaption>전환본 {original.number}쪽</figcaption>
           <div className={styles.editablePage}>
             {converted ? <img src={converted.imageUrl} alt={`전환 PDF ${original.number}쪽`} />
-              : previewError ? <Failure message={previewError.message} retry={retry} />
+              : previewError ? <Failure message={previewError.message}
+                retry={previewError instanceof PdfRedactionError ? undefined : retry} />
                 : <p role="status">미리보기를 만드는 중…</p>}
             {canEdit && converted && editableBlocks.map((block) => (
               <button key={block.id} type="button" className={styles.paragraphTarget}

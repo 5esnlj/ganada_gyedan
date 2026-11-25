@@ -11,6 +11,7 @@ class PdfBlock(Input):
     id: str = Field(pattern=r"^p[1-9][0-9]*b[1-9][0-9]*$", max_length=32)
     text: str = Field(min_length=1, max_length=10_000, pattern=r"\S")
     preserve: bool = False
+    layout: Literal["text", "structure", "image", "margin"] | None = None
 
 
 class PdfPage(Input):

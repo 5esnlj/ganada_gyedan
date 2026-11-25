@@ -1,4 +1,4 @@
-import type { Rgb, TextRect } from './types';
+import type { Box, Rgb, TextRect } from './types';
 
 export interface Raster {
   canvas: HTMLCanvasElement;
@@ -77,6 +77,14 @@ export interface Rectangle {
   y1: number;
 }
 
+export function pixelRectangle(box: Box, scale: number, width: number, height: number, bleed = 0): Rectangle | null {
+  const x0 = Math.max(0, Math.floor(box.x * scale - bleed));
+  const x1 = Math.min(width - 1, Math.ceil(box.x1 * scale + bleed));
+  const y0 = Math.max(0, Math.floor(box.y * scale - bleed));
+  const y1 = Math.min(height - 1, Math.ceil(box.y1 * scale + bleed));
+  return x1 >= x0 && y1 >= y0 ? { x0, y0, x1, y1 } : null;
+}
+
 export function textRectangle(
   rect: TextRect,
   scale: number,
@@ -86,11 +94,10 @@ export function textRectangle(
 ): Rectangle | null {
   const [x, y, w, size] = rect;
   const pad = size * padding;
-  const x0 = Math.max(0, Math.floor((x - pad) * scale));
-  const x1 = Math.min(width - 1, Math.ceil((x + w + pad) * scale));
-  const y0 = Math.max(0, Math.floor((y - size * 0.06 - pad) * scale));
-  const y1 = Math.min(height - 1, Math.ceil((y + size * 1.08 + pad) * scale));
-  return x1 > x0 && y1 > y0 ? { x0, y0, x1, y1 } : null;
+  return pixelRectangle({
+    x: x - pad, y: y - size * 0.06 - pad,
+    x1: x + w + pad, y1: y + size * 1.08 + pad,
+  }, scale, width, height);
 }
 
 export function inkColor(source: Raster, masked: Raster, scale: number, rectangle: TextRect): Rgb | null {

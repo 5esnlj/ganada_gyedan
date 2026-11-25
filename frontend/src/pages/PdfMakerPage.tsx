@@ -11,7 +11,7 @@ import { useApi } from '../hooks';
 import {
   openSourcePdf, toConversionPages, type PdfSource,
 } from '../pdf';
-import { hasPositionedParagraphs, makeEditionPdf, PdfComparison } from './PdfComparison';
+import { hasPositionedParagraphs, makeEditionPdf, PdfComparison, verifyEditionLayout } from './PdfComparison';
 import styles from './PdfMakerPage.module.css';
 import { errorMessage, Failure, languageLabel, LEVEL_LABELS, Panel, SolarKey, useAction } from './teacherWorkspace';
 
@@ -329,7 +329,13 @@ function useReviewPages(pdf: PdfSource | null, content: MaterialContent) {
   ];
   const from = pagesInContent.length ? Math.min(...pagesInContent) : 1;
   const to = pagesInContent.length ? Math.max(...pagesInContent) : 1;
-  return useApi(async () => pdf ? pdf.readPages(from, to) : [], [pdf, from, to]);
+  return useApi(async () => {
+    if (!pdf) return [];
+    if (from < 1 || to > pdf.pageCount) {
+      throw new Error('초안의 쪽 번호가 원본 PDF와 맞지 않습니다. 원본으로 돌아가 다시 변환해 주세요.');
+    }
+    return pdf.readPages(from, to);
+  }, [pdf, from, to]);
 }
 
 function EditionEditor({ source, initial, initialVersion, onReload }: {
@@ -349,6 +355,8 @@ function EditionEditor({ source, initial, initialVersion, onReload }: {
   const editable = edition.status === 'draft' || edition.status === 'reviewed';
   const allTextValid = edited.paragraphs.every((paragraph) => paragraph.text.trim());
   const positioned = pages.data ? hasPositionedParagraphs(pages.data, edition.content) : null;
+  const requiresPdf = Boolean(source.fileId || edition.content.hiddenBlockIds?.length);
+  const checkingLayout = requiresPdf && (!pages.data?.length || !original.pdf);
   const showTextEditor = !source.fileId || Boolean(original.error || pages.error)
     || positioned === false;
 
@@ -373,19 +381,26 @@ function EditionEditor({ source, initial, initialVersion, onReload }: {
 
   function update(action: 'review' | 'publish') {
     void run(async () => {
-      if (action === 'publish' && positioned && pages.data?.length) {
-        const pdf = await makeEditionPdf(pages.data, edition.content);
-        accept(await pdfMakerApi.publishPdf(edition.id, pdf, version));
-      } else {
-        accept(await pdfMakerApi.transition(edition.id, action, version));
+      const mustRender = positioned || Boolean(edition.content.hiddenBlockIds?.length);
+      if (mustRender) {
+        if (!pages.data?.length) throw new Error('원본 지면을 확인할 수 없습니다. 원본으로 돌아가 다시 변환해 주세요.');
+        if (action === 'publish') {
+          const pdf = await makeEditionPdf(pages.data, edition.content);
+          accept(await pdfMakerApi.publishPdf(edition.id, pdf, version));
+          return;
+        }
+        await verifyEditionLayout(pages.data, edition.content);
       }
+      accept(await pdfMakerApi.transition(edition.id, action, version));
     });
   }
 
   return (
     <>
       <p className={styles.status}><strong>{EDITION_LABELS[edition.status]}</strong> · 버전 {edition.revision}</p>
-      {!source.fileId ? <p className={styles.muted}>원본 PDF가 없어 본문으로 검토할 수 있습니다.</p>
+      {!source.fileId ? edition.content.hiddenBlockIds?.length
+        ? <Failure message="원본 PDF가 없어 교사용 문단을 안전하게 가렸는지 확인할 수 없습니다." />
+        : <p className={styles.muted}>원본 PDF가 없어 본문으로 검토할 수 있습니다.</p>
         : original.error ? <Failure message={original.error} retry={original.retry} />
         : pages.error ? <Failure message={pages.error.message} retry={pages.retry} />
         : pages.data?.length ? <PdfComparison originals={pages.data} content={edition.content} title={edition.title}
@@ -415,8 +430,9 @@ function EditionEditor({ source, initial, initialVersion, onReload }: {
         retry={error instanceof ApiError && error.status === 412 ? onReload : undefined} />}
       {editable && (
         <div className={styles.actions}>
-          {edition.status === 'draft' && <Button disabled={busy || dirty || editingOnPage} onClick={() => update('review')}>검토 완료</Button>}
-          {edition.status === 'reviewed' && <Button disabled={busy || dirty || editingOnPage || Boolean(source.fileId && !pages.data)}
+          {edition.status === 'draft' && <Button disabled={busy || dirty || editingOnPage || checkingLayout}
+            onClick={() => update('review')}>{busy ? '지면 확인 중…' : '검토 완료'}</Button>}
+          {edition.status === 'reviewed' && <Button disabled={busy || dirty || editingOnPage || checkingLayout}
             onClick={() => update('publish')}>{busy ? '배포 중…' : '학생에게 배포'}</Button>}
         </div>
       )}

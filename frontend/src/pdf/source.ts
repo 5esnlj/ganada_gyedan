@@ -1,11 +1,12 @@
-import { AnnotationMode, getDocument, GlobalWorkerOptions, PasswordException, Util } from 'pdfjs-dist';
+import { AnnotationMode, getDocument, GlobalWorkerOptions, OPS, PasswordException, Util } from 'pdfjs-dist';
 import type { PDFPageProxy, PageViewport } from 'pdfjs-dist';
+import type { OperationsFilter } from 'pdfjs-dist/types/src/display/api';
 import workerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
-import { addLayoutAids, analyzeShapes, figureRegions, fontInfo, runRect, toBlocks } from './geometry';
+import { addLayoutAids, analyzeShapes, classifyLayout, figureRegions, fontInfo, runRect, toBlocks } from './geometry';
 import type { TextRun } from './geometry';
 import { createRaster, inkColor, releaseRaster, rgb, ringMode, textRectangle } from './raster';
 import type { Raster } from './raster';
-import type { FontFamily, PdfPage, PdfSource } from './types';
+import type { FontFamily, PdfPage, PdfSource, TextRect } from './types';
 
 GlobalWorkerOptions.workerSrc = workerUrl;
 
@@ -34,12 +35,20 @@ function renderScale(viewport: PageViewport): number {
     Math.sqrt(3.2e6 / (viewport.width * viewport.height)));
 }
 
-async function renderOriginal(page: PDFPageProxy, viewport: PageViewport): Promise<Raster> {
+const textPaint = new Set([
+  OPS.showText, OPS.showSpacedText, OPS.nextLineShowText, OPS.nextLineSetSpacingShowText,
+]);
+const omitText: OperationsFilter = (index, operators) => !textPaint.has(operators.fnArray[index]);
+
+async function renderOriginal(
+  page: PDFPageProxy, viewport: PageViewport, operationsFilter?: OperationsFilter,
+): Promise<Raster> {
   const raster = createRaster(viewport.width, viewport.height);
   try {
     await page.render({
       canvas: raster.canvas, canvasContext: raster.context, viewport,
       background: '#fff', annotationMode: AnnotationMode.DISABLE,
+      operationsFilter,
     }).promise;
     return raster;
   } catch (error) {
@@ -126,15 +135,35 @@ function readBackground(run: TextRun, masked: Raster, pixels: Uint8ClampedArray,
   return true;
 }
 
+function plainBackground(rect: TextRect, pixels: Uint8ClampedArray, width: number, height: number, scale: number) {
+  const box = textRectangle(rect, scale, width, height, 0);
+  if (!box) return false;
+  const { x0, y0, x1, y1 } = box;
+  const sample = ringMode(pixels, width, height, x0, y0, x1, y1, 1);
+  if (!sample || sample.share < 0.9) return false;
+  let count = 0;
+  let different = 0;
+  for (let y = y0; y <= y1; y += 2) {
+    for (let x = x0; x <= x1; x += 2) {
+      const i = (y * width + x) * 4;
+      if (sample.color.some((channel, c) => Math.abs(channel - pixels[i + c]) > 14)) different++;
+      count++;
+    }
+  }
+  return different < count * 0.02;
+}
+
 async function readPage(page: PDFPageProxy, number: number): Promise<PdfPage> {
   const viewport = page.getViewport({ scale: 1 });
   const scale = renderScale(viewport);
-  const original = await renderOriginal(page, page.getViewport({ scale }));
+  const rasterViewport = page.getViewport({ scale });
+  const original = await renderOriginal(page, rasterViewport);
   let masked: Raster | undefined;
+  let background: Raster | undefined;
   try {
     const result: PdfPage = {
       number, width: viewport.width, height: viewport.height, scale,
-      imageUrl: original.canvas.toDataURL('image/jpeg', 0.9),
+      imageUrl: original.canvas.toDataURL('image/png'),
       blocks: [], figures: [], images: [], shapes: [], boxes: [],
     };
 
@@ -146,7 +175,7 @@ async function readPage(page: PDFPageProxy, number: number): Promise<PdfPage> {
           : `${number}쪽은 선택 가능한 글자가 부족해 원본을 유지합니다.`;
         return result;
       }
-      const { images, shapes, area } = await analyzeShapes(page, viewport);
+      const { images, shapes, area, textClipping } = await analyzeShapes(page, viewport);
       const figures = figureRegions(images, shapes, items, area);
       const { width, height } = original.canvas;
       const pixels = original.context.getImageData(0, 0, width, height).data;
@@ -193,12 +222,34 @@ async function readPage(page: PDFPageProxy, number: number): Promise<PdfPage> {
         }
         return block;
       });
+      releaseRaster(maskedPage);
+      masked = undefined;
       result.figures = figures;
       result.images = images;
       result.shapes = shapes.filter(box => (box.x1 - box.x) * (box.y1 - box.y) < area * 0.3);
       result.boxes = shapes.filter(box =>
         box.segments <= 10 && box.x1 - box.x > 20 && box.y1 - box.y > 10 &&
         (box.x1 - box.x) * (box.y1 - box.y) < area * 0.6);
+      let backgroundPixels: Uint8ClampedArray | undefined;
+      if (!textClipping) {
+        try {
+          background = await renderOriginal(page, rasterViewport, omitText);
+          backgroundPixels = background.context.getImageData(0, 0, width, height).data;
+          result.backgroundUrl = background.canvas.toDataURL('image/png');
+        } catch {
+          // Without trustworthy background pixels the renderer can preserve the original.
+        }
+      }
+      classifyLayout(result, shapes, run => backgroundPixels !== undefined
+        && plainBackground(run, backgroundPixels, width, height, scale));
+      const cleanRaster = background;
+      if (cleanRaster && backgroundPixels) {
+        for (const block of result.blocks) {
+          if (block.layout !== 'text' || block.color !== '#222') continue;
+          const ink = block.runs.map(run => inkColor(original, cleanRaster, scale, run)).find(Boolean);
+          if (ink) block.color = rgb(ink);
+        }
+      }
       addLayoutAids(result);
       return result;
     } catch {
@@ -206,6 +257,7 @@ async function readPage(page: PDFPageProxy, number: number): Promise<PdfPage> {
     }
   } finally {
     if (masked) releaseRaster(masked);
+    if (background) releaseRaster(background);
     releaseRaster(original);
     page.cleanup();
   }

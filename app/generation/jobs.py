@@ -51,7 +51,8 @@ def request_keys(body, request_key):
     if (not request_key or len(request_key) > 64
             or not request_key.isascii() or not request_key.strip()):
         fail(400, "IDEMPOTENCY_KEY_REQUIRED", "1~64자 Idempotency-Key가 필요합니다.")
-    payload = body.model_dump(mode="json")
+    # Keep the digest of earlier requests when no layout hint was provided.
+    payload = body.model_dump(mode="json", exclude_none=True)
     payload["studentMemberIds"].sort()
     digest = sha256(json.dumps(payload, sort_keys=True, ensure_ascii=False).encode()).hexdigest()
     return sha256(request_key.encode()).hexdigest(), digest

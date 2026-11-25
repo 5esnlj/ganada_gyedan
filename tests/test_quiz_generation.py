@@ -127,6 +127,13 @@ def test_generate_review_publish_and_solve(teacher, monkeypatch):
     client.post("/ai-credentials", json={"apiKey": "not-a-live-key-wxyz"}).raise_for_status()
     assert client.post(endpoint, json=body | {"questionType": "true_false"}, headers={"Idempotency-Key": "tf"}).status_code == 422
 
+    _, unpublished_target, _ = target(client, "학생 B")
+    mixed_targets = body | {"studentMemberIds": body["studentMemberIds"] + unpublished_target["studentMemberIds"]}
+    missing = client.post(endpoint, json=mixed_targets, headers={"Idempotency-Key": "unpublished-passage"})
+    assert missing.status_code == 422 and missing.json()["code"] == "QUIZ_PASSAGE_REQUIRED"
+    assert "자료 제작에서 먼저 전환본을 배포" in missing.json()["message"]
+    assert not calls
+
     created = client.post(endpoint, json=body, headers={"Idempotency-Key": "q1"})
     assert created.status_code == 202, created.text
     job = latest_job(client, endpoint)

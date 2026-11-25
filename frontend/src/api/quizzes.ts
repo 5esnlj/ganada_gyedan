@@ -56,7 +56,7 @@ export type AnswerOut = {
 export type Explanation = { questionId: string; correctOptionId: string; explanation: string; sourceSentenceIds: string[] };
 
 export const quizApi = {
-  startJobs: (classId: string, input: { sourceId: string; studentMemberIds: string[]; useStudentMaterials: boolean; approvedSentenceIds: string[] }, requestId: string) =>
+  startJobs: (classId: string, input: { sourceId: string; studentMemberIds: string[] }, requestId: string) =>
     request<ListOut<QuizJob>>(`${classPath(classId)}/generation-jobs`, {
       method: 'POST', headers: { 'Idempotency-Key': requestId },
       body: JSON.stringify({ ...input, operation: 'generate_quiz' }),

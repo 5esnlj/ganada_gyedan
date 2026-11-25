@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { ChevronLeft, ChevronRight, Sparkles } from 'lucide-react';
 import { ApiError } from '../api';
-import { pdfMakerApi, type PdfSourceOut, type StudentTarget } from '../api/pdfMaker';
+import { pdfMakerApi, type StudentTarget } from '../api/pdfMaker';
 import { quizApi, type QuestionEdit, type QuizJob, type TeacherQuestion, type TeacherQuiz } from '../api/quizzes';
 import type { AreaCode } from '../api/wire';
 import { Button, Chip, LevelPill, PageHeader, TableCard } from '../components';
@@ -49,13 +49,10 @@ function NewQuiz({ classId, subject, students, onQueued }: {
   const sources = useApi(() => pdfMakerApi.sources(classId, subject), [classId, subject]);
   const [sourceId, setSourceId] = useState('');
   const [selected, setSelected] = useState<string[]>([]);
-  const [approved, setApproved] = useState<string[]>([]);
-  const [useStudentMaterials, setUseStudentMaterials] = useState(true);
   const [keyReady, setKeyReady] = useState(false);
   const { busy, error, run } = useAction();
   const prior = useRef<{ body: string; key: string }>();
-  const items: PdfSourceOut[] = sources.data?.items ?? [];
-  const source = items.find((item) => item.id === sourceId);
+  const items = sources.data?.items ?? [];
 
   function toggle(id: string) {
     setSelected((current) => current.includes(id) ? current.filter((item) => item !== id) : [...current, id]);
@@ -65,7 +62,7 @@ function NewQuiz({ classId, subject, students, onQueued }: {
     event.preventDefault();
     if (!keyReady || !sourceId || !selected.length) return;
     void run(async () => {
-      const input = { sourceId, studentMemberIds: [...selected].sort(), useStudentMaterials, approvedSentenceIds: [...approved].sort() };
+      const input = { sourceId, studentMemberIds: [...selected].sort() };
       const body = JSON.stringify(input);
       if (prior.current?.body !== body) prior.current = { body, key: crypto.randomUUID() };
       await quizApi.startJobs(classId, input, prior.current.key);
@@ -81,30 +78,11 @@ function NewQuiz({ classId, subject, students, onQueued }: {
       <Panel title="새 문항 만들기">
         {sources.error ? <Failure message={sources.error.message} retry={sources.retry} /> : (
           <form className={styles.form} onSubmit={submit}>
-            <label>자료<select aria-label="자료" value={sourceId} onChange={(event) => { setSourceId(event.target.value); setApproved([]); }} required disabled={busy}>
+            <label>자료<select aria-label="자료" value={sourceId} onChange={(event) => setSourceId(event.target.value)} required disabled={busy}>
               <option value="">자료를 고르세요</option>
               {items.map((item) => <option key={item.id} value={item.id}>{item.title}{item.unit ? ` · ${item.unit}` : ''}</option>)}
             </select></label>
-            {source && <>
-              <label>출제에 사용할 자료<select aria-label="출제에 사용할 자료" value={useStudentMaterials ? 'edition' : 'original'}
-                onChange={(event) => setUseStudentMaterials(event.target.value === 'edition')} disabled={busy}>
-                <option value="edition">배포된 학생용 전환본 우선</option>
-                <option value="original">선택한 원본 지문</option>
-              </select></label>
-              <details className={styles.details} open={!useStudentMaterials || undefined}>
-                <summary>원본에서 학생에게 보여줄 지문 · {approved.length}문장 선택</summary>
-                <p className={styles.muted}>전환본을 사용하지 않는 학생에게는 여기서 고른 문장만 표시됩니다. 정답과 지도 메모는 제외해 주세요.</p>
-                <fieldset className={styles.targets} disabled={busy} aria-label="원본 지문 선택">
-                  {source.sentences.map(({ id, text }) => (
-                    <label key={id} className={styles.target}>
-                      <input type="checkbox" checked={approved.includes(id)} disabled={!approved.includes(id) && approved.length >= 80}
-                        onChange={() => setApproved((rows) => rows.includes(id) ? rows.filter((row) => row !== id) : [...rows, id])} />
-                      <span>{text}</span>
-                    </label>
-                  ))}
-                </fieldset>
-              </details>
-            </>}
+            <p className={styles.muted}>선택한 학생에게 배포된 전환본으로 문항을 만듭니다.</p>
             <fieldset className={styles.targets} disabled={busy}>
               <legend>받을 학생 · {selected.length}명</legend>
               {students.map((student) => {
@@ -124,7 +102,7 @@ function NewQuiz({ classId, subject, students, onQueued }: {
             </fieldset>
             {Boolean(error) && <Failure message={errorMessage(error)} />}
             <div className={styles.actions}>
-              <Button type="submit" icon={<Sparkles size={18} />} disabled={!keyReady || busy || !sourceId || !selected.length || (!useStudentMaterials && !approved.length)}>
+              <Button type="submit" icon={<Sparkles size={18} />} disabled={!keyReady || busy || !sourceId || !selected.length}>
                 {busy ? '요청 중…' : '문항 만들기'}
               </Button>
             </div>

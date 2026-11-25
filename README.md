@@ -76,7 +76,9 @@ git pull --ff-only origin feat/korean-assessment
 .\.venv\Scripts\python.exe -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
 ```
 
-마지막 명령에서 생성한 값을 로컬 `.env`의 `GANADA_SOLAR_ENCRYPTION_KEY`에 넣고 F5로 백엔드를 다시 실행합니다. 이 값은 교사별 Solar API 키를 암호화하는 서버 키입니다. 각 교사는 자료 제작 화면에서 자신의 Solar API 키를 등록합니다. **변환 시작**을 눌렀을 때 백엔드에서 Solar를 호출합니다. 모델 기본값은 `solar-pro-4`이고, 실제 발급 계정의 모델 ID가 다르면 `GANADA_SOLAR_MODEL`에서 맞출 수 있습니다.
+마지막 명령에서 생성한 값을 로컬 `.env`의 `GANADA_SOLAR_ENCRYPTION_KEY`에 넣고 F5로 백엔드를 다시 실행합니다. 이 값은 교사별 Solar API 키를 암호화하는 서버 키입니다. 각 교사는 자료 제작 화면에서 자신의 Solar API 키를 등록합니다. **변환 시작**을 눌렀을 때 백엔드에서 Solar를 호출합니다. 모델 기본값은 Upstage 모델 ID인 `solar-pro4`입니다. 기존 `.env`에 들어 있는 `solar-pro-4`도 `solar-pro4`로 변환해서 사용합니다. [Upstage의 Solar Pro 4 매개변수 안내](https://github.com/UpstageAI/Solar-Pro4-Cookbook/tree/main/capabilities/parameters)
+
+변환 작업에 실패한 쪽 번호가 나타나면 시작 쪽과 마지막 쪽에 그 번호를 넣어 한 쪽만 변환해 보세요. 토큰 한도로 같은 쪽이 반복해서 실패하면 글이 더 짧은 원본으로 확인하고, JSON이나 문단 검증 오류가 반복되면 변환 작업에 표시된 문구와 쪽 번호를 공유해 주세요. 백엔드 로그에는 작업 ID, 오류 코드, 쪽 번호가 기록됩니다.
 
 이미 MariaDB 전용 계정을 만들었다면 아래 **PDF 제작 권한**을 추가합니다. DB 모드의 원본 업로드는 기본적으로 저장소의 `.ganada-files/`에 저장됩니다. 다른 경로를 써야 한다면 `GANADA_DB_FILES_DIR`을 설정하고, 예시 PDF도 기존 `seed/` 상대 경로에 배치합니다.
 
@@ -86,7 +88,7 @@ git pull --ff-only origin feat/korean-assessment
 
 로그인 응답의 세션 쿠키를 유지하고, 이후 쓰기 요청에 응답의 `csrfToken`을 `X-CSRF-Token`으로 전달합니다. 문항이나 자료를 수정·검토·배포할 때는 상세 조회나 직전 변경 응답의 `ETag`를 `If-Match`로 보냅니다. 문항 답안을 재전송할 때는 같은 `Idempotency-Key`를 사용합니다. 충돌과 유효성 오류를 포함한 API 오류는 `code`, `message`, `requestId`, `details`로 반환됩니다.
 
-교사 자료·문항과 풀이 이력은 해당 클래스의 담당 교과로 제한합니다. 학생은 진단을 완료한 후 자신에게 배포된 자료와 문항을 볼 수 있습니다. 원본 PDF는 교사가 접근할 수 있는 등록 원본 또는 학생에게 배포된 원본 직접 출제 문항을 통해 내려받습니다.
+교사 자료·문항과 풀이 이력은 해당 클래스의 담당 교과로 제한합니다. 학생은 진단을 완료한 후 자신에게 배포된 자료와 문항을 볼 수 있습니다. 새 확인 문제를 원본에서 출제하면 학생 화면에는 교사가 선택한 지문만 표시합니다.
 
 현재 PDF 업로드는 텍스트가 포함된 PDF를 10 MiB, 100페이지, 추출 텍스트 25만 자까지 받습니다. 스캔 PDF의 OCR, 파일 악성코드 검사 및 운영용 비공개 파일 저장소는 후속 작업입니다. 아직은 실제 학생 데이터나 운영 계정으로 실행하지 마세요.
 
@@ -94,7 +96,7 @@ git pull --ff-only origin feat/korean-assessment
 
 ## Windows에서 MariaDB 연결
 
-기존 `ganada`에 예시 데이터 검증까지 마쳤다면 SQL을 다시 실행할 필요가 없습니다. 처음 준비하는 경우 [예시 SQL과 ZIP](docs/mariadb-seed/)을 참고하세요.
+기존 `ganada`에 예시 데이터 검증까지 마쳤다면 테이블 생성과 예시 데이터 입력 스크립트는 생략합니다. 처음 준비하는 경우 [예시 SQL과 ZIP](docs/mariadb-seed/)을 참고하세요.
 
 `ganada_app` 전용 계정이 없다면 HeidiSQL의 관리자 세션에서 아래 SQL을 한 번 실행합니다. 비밀번호 자리에는 로컬에서 정한 값으로 바꾸세요. 계정이 이미 있으면 `CREATE USER`를 생략합니다.
 
@@ -113,6 +115,12 @@ GRANT INSERT ON ganada.source_materials TO 'ganada_app'@'127.0.0.1';
 GRANT INSERT, UPDATE ON ganada.ai_credentials TO 'ganada_app'@'127.0.0.1';
 GRANT INSERT, UPDATE ON ganada.ai_requests TO 'ganada_app'@'127.0.0.1';
 GRANT INSERT, UPDATE ON ganada.student_materials TO 'ganada_app'@'127.0.0.1';
+
+-- 확인 문제 권한
+GRANT INSERT, UPDATE ON ganada.quizzes TO 'ganada_app'@'127.0.0.1';
+GRANT INSERT, UPDATE ON ganada.quiz_questions TO 'ganada_app'@'127.0.0.1';
+GRANT INSERT, UPDATE ON ganada.quiz_submissions TO 'ganada_app'@'127.0.0.1';
+GRANT INSERT ON ganada.quiz_answer_attempts TO 'ganada_app'@'127.0.0.1';
 ```
 
 VS Code의 저장소 루트에서 PowerShell로 실행합니다.
@@ -130,4 +138,19 @@ if (-not (Test-Path .env)) { Copy-Item .env.example .env }
 2. 프론트엔드에서 교사 `t_math`와 `t_science`로 각각 로그인합니다. 두 계정은 같은 반을 보고, 자료 목록은 담당 교과에 해당하는 자료만 보여야 합니다.
 3. 학생 `s_pending`으로 로그인해 학년군을 고르고 첫 답안을 제출합니다. F5 백엔드를 중지했다가 다시 켜고 브라우저를 새로 고침합니다. 두 번째 문항부터 열린다면 저장과 이어 풀기가 확인된 것입니다. DB에서 확인하려면 [답안 확인 SQL](docs/mariadb-seed/README.md#앱-연결-후-검사할-흐름)을 실행합니다.
 
-MariaDB 모드에서는 계정, 세션, 클래스, 진단 문항·답안·결과, 배포 자료와 문제를 DB에서 조회합니다. 진단 시작·답안 제출과 채점 결과, 세션 생성·종료를 DB에 기록합니다. PDF 등록, 교사별 키 및 PDF 작업 상태, 변환본 수정·검토·배포도 DB에 기록합니다. 클래스 생성·초대, 문제 작성과 일반 학습 문제 풀이의 DB 쓰기 API는 501을 반환합니다. DB 접속이 끊기면 메모리로 자동 전환하지 않습니다.
+MariaDB에는 세션, 진단평가 진행 결과, PDF 등록과 변환본, 확인 문제 생성·수정·배포와 풀이 이력을 저장합니다. 클래스 생성·초대의 DB 쓰기 API는 501을 반환합니다. DB 접속이 끊기면 메모리로 자동 전환하지 않습니다.
+
+## 교사 문항 생성 · 학생 확인 문제
+
+학생이 공부한 자료로 학생마다 4지선다 확인 문제를 만들고, 교사가 검토해 배포한 뒤 학생이 풉니다. 자료 제작과 같은 교사별 Solar 키를 씁니다.
+
+- **출제 기준**은 4지선다 5문항입니다. 현재 교과 수준과 해당 교과 읽기 수준 중 낮은 쪽을 기준으로 용어·사실·관계·적용·비교 문항을 배분합니다. 기본은 일반 4문항과 도전 1문항입니다.
+- **도전 문항 조정 제안**은 같은 학생·교과에서 가장 최근에 최초 풀이를 마친 묶음을 사용합니다. 기본 문항을 2개 이상 틀리면 다음 도전은 0개로 줄이고 용어 문항으로 보강합니다. 도전을 모두 맞히고 기본 오답이 1개 이하면 다음 도전은 2개입니다. 다른 경우는 1개입니다. 첫 풀이 기록을 사용하므로 재풀이 후에도 조정 결과가 유지됩니다. 고급에서는 등급을 더 올리지 않고 같은 수준의 비교·판단 문항을 냅니다.
+- **출제 지문**은 배포한 학생용 전환본 또는 교사가 선택한 원본 문장입니다. **선택한 원본 지문**을 고르면 전환본이 있는 학생에게도 선택한 지문을 사용합니다. 교사는 검토에서 문항별 근거 문장을 수정할 수 있습니다.
+- **MariaDB**에서는 기존 20개 테이블을 사용합니다. 계정을 이미 만들었다면 위 **확인 문제 권한**을 추가합니다. 출제 계획은 기존 `ai_requests.profile_snapshot`에 기록합니다.
+
+1. 교사 `t_math`로 로그인해 **문항 생성** → **새 문항 만들기**를 누릅니다. Solar 키가 없으면 먼저 저장합니다.
+2. 자료와 받을 학생을 고르고 **문항 만들기**를 누릅니다. 완료되면 수준 탭과 문항 묶음 목록에 초안이 나타납니다.
+3. 문항 묶음을 고르면 한 문항씩 문제·보기·정답(연한 초록)·해설·근거 문장과 유형·도전 표시를 봅니다. **수정**으로 고친 뒤 **검토 완료** → **학생에게 배포**를 누릅니다.
+4. 학생(예: `s_a`)으로 로그인해 **내 문항**에서 풀고, 결과의 **해설 볼래요**로 해설과 근거 문장을, **다시 풀어볼래요**로 틀린 문제만 다시 풉니다.
+5. 교사 화면에서 배포한 묶음을 열면 유형별 첫 풀이 결과와 다음 구성 조정을 확인합니다.

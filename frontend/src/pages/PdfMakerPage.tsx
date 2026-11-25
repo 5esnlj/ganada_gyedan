@@ -1,73 +1,26 @@
-import { useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { Download, FileText } from 'lucide-react';
 import { ApiError, SUBJECT_LABELS } from '../api';
 import {
-  pdfMakerApi, type Credential, type GenerationJob, type MaterialContent, type PdfSourceOut,
+  pdfMakerApi, type GenerationJob, type MaterialContent, type PdfSourceOut,
   type StudentEdition, type StudentTarget,
 } from '../api/pdfMaker';
-import type { AreaCode, LevelCode } from '../api/wire';
+import type { AreaCode } from '../api/wire';
 import { Button, LevelPill, MaterialCard, PageHeader, UploadBox } from '../components';
 import { useApi } from '../hooks';
 import {
   exportPreviewPdf, openSourcePdf, renderConvertedPages, toConversionPages, type PdfPage, type PdfSource,
 } from '../pdf';
-import type { Level } from '../types';
 import styles from './PdfMakerPage.module.css';
+import { errorMessage, Failure, languageLabel, LEVEL_LABELS, Panel, SolarKey, useAction } from './teacherWorkspace';
 
 const date = new Intl.DateTimeFormat('ko-KR', { timeZone: 'Asia/Seoul', year: 'numeric', month: 'short', day: 'numeric' });
-const languageNames = new Intl.DisplayNames(['ko'], { type: 'language' });
 const EDITION_LABELS: Record<StudentEdition['status'], string> = {
   draft: '초안', reviewed: '검토 완료', published: '배포됨', withdrawn: '회수됨',
 };
 const JOB_LABELS: Record<GenerationJob['status'], string> = {
   queued: '대기 중', running: '변환 중', succeeded: '완료', failed: '실패', unknown: '상태 확인 필요',
 };
-const LEVEL_LABELS: Record<LevelCode, Level> = {
-  below_beginner: '초급 미달', beginner: '초급', intermediate: '중급', advanced: '고급',
-};
-const errorMessage = (error: unknown) => error instanceof Error ? error.message : '요청을 처리하지 못했습니다.';
-
-function languageLabel(code: string) {
-  if (!code) return '모국어 미등록';
-  try { return languageNames.of(code) ?? code; } catch { return code; }
-}
-
-function Failure({ message, retry }: { message: string; retry?: () => void }) {
-  return (
-    <div className={styles.failure} role="alert">
-      <p>{message}</p>
-      {retry && <Button variant="secondary" onClick={retry}>다시 불러오기</Button>}
-    </div>
-  );
-}
-
-function Panel({ title, children }: { title: string; children: ReactNode }) {
-  return <section className={styles.panel}><h2>{title}</h2>{children}</section>;
-}
-
-function useAction() {
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<unknown>(null);
-  const running = useRef(false);
-
-  async function run(action: () => Promise<void>) {
-    if (running.current) return;
-    running.current = true;
-    setBusy(true);
-    setError(null);
-    try {
-      await action();
-    } catch (cause) {
-      setError(cause);
-    } finally {
-      setBusy(false);
-      running.current = false;
-    }
-  }
-
-  return { busy, error, run };
-}
-
 function SourceUpload({ classId, onCreated, onCancel }: {
   classId: string;
   onCreated: (source: PdfSourceOut) => void;
@@ -170,61 +123,6 @@ function useSourcePdf(fileId: string | null) {
   }, [fileId, revision]);
 
   return { pdf, error, retry: () => setRevision((value) => value + 1) };
-}
-
-function CredentialForm({ current, onSaved, onCancel }: {
-  current?: Credential;
-  onSaved: (credential: Credential) => void;
-  onCancel: () => void;
-}) {
-  const keyInput = useRef<HTMLInputElement>(null);
-  const { busy, error, run } = useAction();
-
-  function save(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    const apiKey = keyInput.current?.value.trim();
-    if (!apiKey) return;
-    void run(async () => {
-      const credential = await pdfMakerApi.saveCredential(apiKey);
-      if (keyInput.current) keyInput.current.value = '';
-      onSaved(credential);
-    });
-  }
-
-  return (
-    <form className={styles.form} onSubmit={save}>
-      <label>Solar API 키<input ref={keyInput} type="password" autoComplete="off" required maxLength={500} disabled={busy} /></label>
-      {Boolean(error) && <Failure message={errorMessage(error)} />}
-      <div className={styles.actions}>
-        {current && <Button variant="secondary" onClick={onCancel} disabled={busy}>키 변경 취소</Button>}
-        <Button type="submit" disabled={busy}>{busy ? '저장 중…' : '키 저장'}</Button>
-      </div>
-    </form>
-  );
-}
-
-function SolarKey({ onReady }: { onReady: (ready: boolean) => void }) {
-  const { data, error, retry } = useApi(pdfMakerApi.credentials);
-  const [saved, setSaved] = useState<Credential | undefined>();
-  const [changing, setChanging] = useState(false);
-  const current = saved ?? data?.items.find((item) => item.status === 'pending' || item.status === 'active');
-  const ready = Boolean(current && !changing);
-
-  useEffect(() => { onReady(ready); }, [ready, onReady]);
-
-  return (
-    <Panel title="Solar 연결">
-      {error ? <Failure message={error.message} retry={retry} /> : !data
-        ? <p role="status">연결 정보를 불러오는 중…</p>
-        : ready
-          ? <div className={styles.row}>
-            <span>{current?.label} · 끝 {current?.maskedSuffix} · {current?.status === 'active' ? '연결됨' : '첫 요청 시 확인'}</span>
-            <Button variant="secondary" onClick={() => setChanging(true)}>키 변경</Button>
-          </div>
-          : <CredentialForm current={current} onCancel={() => setChanging(false)}
-            onSaved={(credential) => { setSaved(credential); setChanging(false); }} />}
-    </Panel>
-  );
 }
 
 function SourceSettings({ classId, source, pdf, targets, onQueued }: {

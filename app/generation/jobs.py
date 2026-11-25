@@ -35,10 +35,14 @@ def public(job):
     started = job["snapshot"].get("startedAt")
     if status == "running" and started and datetime.fromisoformat(started) < datetime.now(timezone.utc) - timedelta(minutes=30):
         status, code = "unknown", "GENERATION_INTERRUPTED"
+    message = ERROR_MESSAGES.get(code)
+    failed_page = job["snapshot"].get("failedPage")
+    if message and failed_page is not None:
+        message = f"{failed_page}쪽 · {message}"
     return {field: job.get(field) for field in (
         "id", "classId", "sourceId", "studentMemberId", "credentialId", "createdBy", "resultId",
     )} | {
-        "status": status, "errorCode": code, "errorMessage": ERROR_MESSAGES.get(code),
+        "status": status, "errorCode": code, "errorMessage": message,
         "resultType": "material" if job.get("resultId") else None,
     }
 
@@ -170,14 +174,19 @@ def succeed(store, job, draft, database):
             credential["status"] = "active"
 
 
-def failed(store, job_id, code, database):
+def failed(store, job_id, code, database, page=None):
     status = "unknown" if code in {"SOLAR_TIMEOUT", "DATABASE_UNAVAILABLE", "GENERATION_INTERRUPTED"} else "failed"
     if database:
         with transaction() as cursor:
             cursor.execute(
-                """UPDATE ai_requests SET status = %s, safe_error_code = %s, finished_at = UTC_TIMESTAMP(6)
+                """UPDATE ai_requests SET status = %s, safe_error_code = %s, finished_at = UTC_TIMESTAMP(6),
+                   profile_snapshot = CASE WHEN %s IS NULL THEN profile_snapshot
+                                           ELSE JSON_SET(profile_snapshot, '$.failedPage', %s) END
                    WHERE id = %s AND status = 'running'""",
-                (status, code, job_id),
+                (status, code, page, page, job_id),
             )
     else:
-        store.generation_jobs[job_id].update(status=status, errorCode=code)
+        job = store.generation_jobs[job_id]
+        job.update(status=status, errorCode=code)
+        if page is not None:
+            job["snapshot"]["failedPage"] = page

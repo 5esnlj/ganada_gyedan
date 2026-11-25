@@ -23,7 +23,9 @@ from app.generation.router import router as generation_router
 from app.generation.worker import run_jobs
 from app.identity.router import router as identity_router
 from app.materials.router import router as materials_router
+from app.quizzes import jobs as quiz_jobs
 from app.quizzes.router import router as quizzes_router
+from app.quizzes.worker import run_quiz_jobs
 from app.seed import seed_catalog
 
 
@@ -41,15 +43,15 @@ MARIADB_WRITES = {
     "/api/v1/diagnostic/start", "/api/v1/diagnostic/answers", "/api/v1/ai-credentials",
 }
 
-MARIADB_MATERIAL_WRITES = {
-    "POST": re.compile(r"/api/v1/(classes/[^/]+/(sources/pdf|generation-jobs)|materials/[^/]+/(review|publish))"),
-    "PATCH": re.compile(r"/api/v1/materials/[^/]+"),
+MARIADB_CONTENT_WRITES = {
+    "POST": re.compile(r"/api/v1/(classes/[^/]+/(sources/pdf|generation-jobs)|materials/[^/]+/(review|publish)|quizzes/[^/]+/(review|publish|answers))"),
+    "PATCH": re.compile(r"/api/v1/(materials/[^/]+|quizzes/[^/]+/questions/[^/]+)"),
 }
 
 
 def _supports_mariadb_write(method: str, path: str) -> bool:
     path = path.rstrip("/")
-    pattern = MARIADB_MATERIAL_WRITES.get(method)
+    pattern = MARIADB_CONTENT_WRITES.get(method)
     return (method == "POST" and path in MARIADB_WRITES) or (
         pattern is not None and pattern.fullmatch(path) is not None
     )
@@ -68,16 +70,18 @@ def create_app(
     @asynccontextmanager
     async def lifespan(application: FastAPI):
         application.state.database_connected = database_mode and await asyncio.to_thread(check_connection)
-        resume = None
+        resumed = []
         if application.state.database_connected:
-            queued = await asyncio.to_thread(pdf_jobs.queued)
-            if queued:
-                resume = asyncio.create_task(run_jobs(application, queued))
+            for storage, worker in ((pdf_jobs, run_jobs), (quiz_jobs, run_quiz_jobs)):
+                queued = await asyncio.to_thread(storage.queued)
+                if queued:
+                    resumed.append(asyncio.create_task(worker(application, queued)))
         try:
             yield
         finally:
-            if resume is not None:
+            for resume in resumed:
                 resume.cancel()
+            for resume in resumed:
                 with suppress(asyncio.CancelledError):
                     await resume
 

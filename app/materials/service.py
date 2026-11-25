@@ -141,6 +141,7 @@ def require_file(state: MemoryStore, user: dict, file_id: str) -> dict:
             quiz["sourceId"] in source_ids
             and quiz["classId"] == class_id
             and not quiz.get("inputMaterialId")
+            and quiz.get("approvedSentenceIds") is None
             and visible_resource(state, user, quiz)
             for quiz in state.quizzes.values()
         )

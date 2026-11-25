@@ -7,6 +7,7 @@ from starlette.concurrency import run_in_threadpool
 
 from app.core.access import active_student_membership, require_active_teacher
 from app.core.errors import APIError, fail
+from app.diagnostic.dto import DiagnosticResults
 from app.diagnostic.service import completed_results
 from app.mariadb.store import load_store
 from app.materials.service import create_draft, require_source
@@ -67,7 +68,9 @@ async def run_jobs(app, job_ids):
             try:
                 key, source, pages = await storage(_prepare, store, job, database)
                 call = partial(solar.complete_json, key, job["model"], for_pdf=True)
-                result = await run_in_threadpool(convert_pdf, call, source, job["snapshot"]["learner"], pages)
+                snapshot = job["snapshot"]["diagnosis"]
+                diagnosis = DiagnosticResults.model_validate(snapshot)
+                result = await run_in_threadpool(convert_pdf, call, source, diagnosis, snapshot.get("nativeLanguage", ""), pages)
                 await storage(_commit, store, job, result, database)
                 continue
             except APIError as error:

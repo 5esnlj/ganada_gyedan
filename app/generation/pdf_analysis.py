@@ -1,5 +1,6 @@
 """Validate Solar's PDF classifications and read optional annotations independently."""
 
+from collections import Counter
 from collections.abc import Callable
 from dataclasses import dataclass, replace
 import logging
@@ -14,14 +15,16 @@ from app.materials.dto import StudyVisual
 from .dto import PdfBlock, PdfPage
 from .solar import ERROR_MESSAGES
 
-Tier = Literal["1", "2-1", "2-2", "2-3", "3"]
 Role = Literal["title", "heading", "body", "caption", "question", "other"]
 Audience = Literal["student", "teacher"]
+Basis = Literal["subject", "communication"]
 AUDIENCE_ALIASES = {"교사": "teacher", "교사용": "teacher", "학생": "student", "학생용": "student"}
 ROLE = TypeAdapter(Role)
+BASIS = TypeAdapter(Basis)
+EDITABLE_ROLES = {"title", "heading", "body", "question"}
 BOOL = TypeAdapter(StrictBool)
 JOINS = TypeAdapter(Annotated[list[StrictBool], Field(max_length=12_000)])
-TERM = TypeAdapter(Annotated[str, StringConstraints(strip_whitespace=True, min_length=2, max_length=300)])
+TERM = TypeAdapter(Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=300)])
 TRANSLATION = TypeAdapter(Annotated[str, StringConstraints(strip_whitespace=True, max_length=300)])
 STUDY_TEXT = TypeAdapter(Annotated[str, Field(min_length=1, max_length=10_000, pattern=r"\S")])
 
@@ -131,21 +134,14 @@ class _AudienceConfirmation(BaseModel):
     blocks: list[_AudienceDecision] = Field(max_length=200)
 
 
-class HardExpression(BaseModel):
-    source: str = Field(alias="from", min_length=1, max_length=80)
-    easy: str = Field(default="", max_length=200)
-    note: str = Field(default="", max_length=80)
-    tier: Tier
+class RewriteTarget(BaseModel):
+    source: str = Field(alias="from", min_length=2, max_length=200)
+    basis: Basis
 
-    @field_validator("easy", "note", mode="before")
-    @classmethod
-    def empty_text(cls, value):
-        return "" if value is None else value
 
-    @field_validator("tier", mode="before")
-    @classmethod
-    def normalize_tier(cls, value):
-        return str(value) if type(value) is int else _normalized(value)
+class TextRewrite(BaseModel):
+    source: str = Field(alias="from", min_length=2, max_length=200)
+    replacement: str = Field(alias="to", min_length=1, max_length=200, pattern=r"\S")
 
 
 class TermDefinition(BaseModel):
@@ -162,16 +158,26 @@ class AnalyzedBlock:
     protect: bool
     joins: list[bool]
     terms: list[str]
-    hard: list[HardExpression]
-    easy_low: str | None
-    easy_mid: str | None
-    dense: bool
-    visual: StudyVisual | None
+    rewrite_targets: list[RewriteTarget]
+    reading_help: Basis | None
 
 
 @dataclass
 class PageAnalysis:
     blocks: dict[str, AnalyzedBlock]
+    limited_support: bool
+
+
+@dataclass(frozen=True)
+class AdaptedBlock:
+    rewrites: list[TextRewrite]
+    note: str | None
+    visual: StudyVisual | None
+
+
+@dataclass(frozen=True)
+class PageAdaptation:
+    blocks: dict[str, AdaptedBlock]
     terms: dict[str, TermDefinition]
     limited_support: bool
 
@@ -270,19 +276,12 @@ def _block_rows(response: object) -> list | None:
     return None
 
 
-def _previous_classification(rows: list | None) -> tuple[dict[str, dict], set[str]]:
-    unique = {}
-    repeated = set()
-    teacher_ids = set()
+def _rows_by_id(rows: list | None) -> dict[str, list[dict]]:
+    indexed = {}
     for raw in rows or []:
-        if not isinstance(raw, dict) or not isinstance(block_id := _normalized(raw.get("id")), str):
-            continue
-        if _normalize_audience(raw.get("audience")) == "teacher":
-            teacher_ids.add(block_id)
-        if block_id in unique:
-            repeated.add(block_id)
-        unique[block_id] = raw
-    return {block_id: row for block_id, row in unique.items() if block_id not in repeated}, teacher_ids
+        if isinstance(raw, dict) and isinstance(block_id := _normalized(raw.get("id")), str):
+            indexed.setdefault(block_id, []).append(raw)
+    return indexed
 
 
 def _parse_page(response: dict, page: PdfPage, previous: dict | None = None) -> PageAnalysis:
@@ -298,7 +297,12 @@ def _parse_page(response: dict, page: PdfPage, previous: dict | None = None) -> 
         code = "SOLAR_OUTPUT_BLOCKS"
         fail(502, code, ERROR_MESSAGES[code], {"page": page.number})
 
-    prior_rows, confirmed_teacher_ids = _previous_classification(_block_rows(previous))
+    prior = _rows_by_id(_block_rows(previous))
+    prior_rows = {block_id: rows[0] for block_id, rows in prior.items() if len(rows) == 1}
+    confirmed_teacher_ids = {
+        block_id for block_id, rows in prior.items()
+        if any(_normalize_audience(row.get("audience")) == "teacher" for row in rows)
+    }
     reader = _AnnotationReader(limited_support=previous is not None)
     classified = {}
     for identity, raw in zip(identities, rows, strict=True):
@@ -316,7 +320,7 @@ def _parse_page(response: dict, page: PdfPage, previous: dict | None = None) -> 
         if role is None or protect_value is None:
             reader.limited_support = True
         can_join = audience == "student" and not (originals[identity.id].preserve or protected)
-        editable = can_join and role != "other"
+        editable = can_join and role in EDITABLE_ROLES
         terms = raw.get("terms")
         if isinstance(terms, str):
             terms = [terms]
@@ -326,15 +330,10 @@ def _parse_page(response: dict, page: PdfPage, previous: dict | None = None) -> 
             protect=protected,
             joins=(reader.read(raw.get("joins"), JOINS.validate_python) or []) if can_join else [],
             terms=reader.items(terms, TERM.validate_python, 3) if editable else [],
-            hard=reader.items(raw.get("hard"), HardExpression.model_validate, 10) if editable else [],
-            easy_low=reader.read(raw.get("easy_low"), STUDY_TEXT.validate_python) if editable else None,
-            easy_mid=reader.read(raw.get("easy_mid"), STUDY_TEXT.validate_python) if editable else None,
-            dense=bool(reader.read(raw.get("dense"), BOOL.validate_python)) if editable else False,
-            visual=reader.read(raw.get("visual"), _visual) if editable else None,
+            rewrite_targets=reader.items(raw.get("rewriteTargets"), RewriteTarget.model_validate, 10) if editable else [],
+            reading_help=reader.read(raw.get("readingHelp"), BASIS.validate_python) if editable else None,
         )
-    referenced = {term for block in classified.values() for term in block.terms}
-    terms = reader.glossary((previous if previous is not None else response).get("terms"), referenced)
-    return PageAnalysis(classified, terms, reader.limited_support)
+    return PageAnalysis(classified, reader.limited_support)
 
 
 def _audience_uncertain(page: PdfPage) -> NoReturn:
@@ -402,12 +401,16 @@ def _confirm_teacher_candidates(
     return analysis
 
 
+def _complete(call: Callable[[str, dict], dict], prompt: str, payload: dict) -> dict:
+    try:
+        return call(prompt, payload)
+    except APIError as error:
+        raise APIError(error.status, error.code, error.message, {"page": payload["page"]}) from error
+
+
 def analyze_page(call: Callable[[str, dict], dict], instructions: str, request: dict, page: PdfPage) -> PageAnalysis:
     def complete(prompt, payload):
-        try:
-            return call(prompt, payload)
-        except APIError as error:
-            raise APIError(error.status, error.code, error.message, {"page": page.number}) from error
+        return _complete(call, prompt, payload)
 
     response = {}
     try:
@@ -422,3 +425,35 @@ def analyze_page(call: Callable[[str, dict], dict], instructions: str, request: 
         retry = complete(CLASSIFICATION_INSTRUCTIONS, retry_input)
         analysis = _parse_page(retry, page, response)
     return _confirm_teacher_candidates(analysis, page, request, complete)
+
+
+def adapt_page(call: Callable[[str, dict], dict], instructions: str, request: dict) -> PageAdaptation:
+    try:
+        response = _complete(call, instructions, request)
+    except APIError as error:
+        if error.code not in RETRYABLE_OUTPUT_ERRORS:
+            raise
+        logger.info("Keeping original PDF text after adaptation failed (page=%s, code=%s)", request["page"], error.code)
+        return PageAdaptation({}, {}, True)
+
+    planned = {row["id"]: row for row in request["blocks"]}
+    rows = _block_rows(response) or []
+    unique = {block_id: group[0] for block_id, group in _rows_by_id(rows).items() if len(group) == 1}
+    reader = _AnnotationReader(limited_support=len(rows) != len(planned) or unique.keys() != planned.keys())
+    adapted = {}
+    for block_id, plan in planned.items():
+        raw = unique.get(block_id, {})
+        allowed = {item["from"] for item in plan["rewriteTargets"]}
+        rewrites = reader.items(raw.get("rewrites"), TextRewrite.model_validate, 10)
+        counts = Counter(edit.source for edit in rewrites)
+        rewritten = [edit for edit in rewrites if edit.source in allowed and counts[edit.source] == 1]
+        if {edit.source for edit in rewritten} != allowed or len(rewritten) != len(rewrites):
+            reader.limited_support = True
+        note = reader.read(raw.get("note"), STUDY_TEXT.validate_python) if plan["readingHelp"] else None
+        visual = reader.read(raw.get("visual"), _visual) if plan["readingHelp"] and plan["role"] == "body" else None
+        if plan["readingHelp"] and note is None and visual is None:
+            reader.limited_support = True
+        adapted[block_id] = AdaptedBlock(rewritten, note, visual)
+    referenced = {term for plan in planned.values() for term in plan["terms"]}
+    terms = reader.glossary(response.get("terms") if isinstance(response, dict) else None, referenced)
+    return PageAdaptation(adapted, terms, reader.limited_support or terms.keys() != referenced)

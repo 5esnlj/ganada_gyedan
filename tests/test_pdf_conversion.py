@@ -12,10 +12,19 @@ from pypdf import PdfReader, PdfWriter
 import pytest
 
 from app.core.errors import APIError
+from app.diagnostic.dto import DiagnosticResults
 from app.generation import solar
 from app.generation.dto import PdfBlock, PdfPage
 from app.generation.prompts import convert_pdf
 from app.main import create_app
+
+
+def diagnosis(subject, level, *, daily="intermediate", reading=None):
+    return DiagnosticResults(
+        formId="test", isSynthetic=True,
+        areas=[{"area": subject, "score": 100, "level": level}, {"area": "daily", "score": 100, "level": daily}],
+        parts=[{"area": subject, "skill": "reading", "score": 50, "level": reading or level}],
+    )
 
 
 def _sample_pdf(page_count):
@@ -43,19 +52,25 @@ def test_pdf_conversion_review_and_publishing(database, monkeypatch, tmp_path):
     monkeypatch.setenv("GANADA_DB_FILES_DIR", str(tmp_path))
     calls = []
     secret = "not-a-live-key-abcd"
+    original_text = "둘레가 12cm인 정사각형의 한 변을 구합니다."
+    note = "정사각형은 네 변의 길이가 같으므로, 둘레는 네 변의 길이를 합한 값입니다."
 
     def fake_solar(api_key, model, instructions, data, *, for_pdf):
         assert api_key == secret and model == "solar-pro4" and for_pdf
         assert "수식" in instructions
         calls.append(data)
+        if data.get("stage") == "adaptation":
+            assert [block["id"] for block in data["blocks"]] == ["p1b1"]
+            return {
+                "blocks": [{"id": "p1b1", "note": note, "visual": {"kind": "list", "items": [1, 2]}}],
+                "terms": {"둘레": {"easy": "도형의 가장자리를 한 바퀴 잰 길이", "translation": "chu vi"}},
+            }
         return {
             "blocks": [
                 {"id": "p1b1", "role": "body", "audience": "student",
-                 "hard": [{"from": "검증", "easy": "확인", "note": "살펴보는 일", "tier": "2-3"}],
-                 "visual": {"kind": "list", "items": [1, 2]}},
+                 "terms": ["둘레"], "readingHelp": "subject"},
                 {"id": "p1b2", "role": "body", "audience": "teacher"},
             ],
-            "terms": {"교과": {"easy": "학교에서 배우는 과목", "translation": "学科"}},
         }
 
     monkeypatch.setattr(solar, "complete_json", fake_solar)
@@ -83,7 +98,7 @@ def test_pdf_conversion_review_and_publishing(database, monkeypatch, tmp_path):
         job_body = {
             "sourceId": source["id"], "studentMemberIds": [student_id], "operation": "convert",
             "pages": [{"number": 1, "blocks": [
-                {"id": "p1b1", "text": "교과 자료를 검증한다.", "preserve": False},
+                {"id": "p1b1", "text": original_text, "preserve": False},
                 {"id": "p1b2", "text": "교사용 정답", "preserve": False},
             ]}],
         }
@@ -94,14 +109,17 @@ def test_pdf_conversion_review_and_publishing(database, monkeypatch, tmp_path):
         job = teacher.get(f"/generation-jobs/{job_id}").raise_for_status().json()
         assert job["status"] == "succeeded", job
         assert "snapshot" not in job and "교사용 정답" not in str(job)
-        assert len(calls) == 1 and calls[0]["learner"]["nativeLanguage"] == "vi"
-        assert "displayName" not in calls[0]["learner"]
+        assert len(calls) == 2
+        learner = calls[0]["learner"]
+        assert learner["nativeLanguage"] == "vi" and learner["subjectCriterion"]["grade"] == "중급"
+        assert learner["communicationCriterion"]["label"] == "보완 필요"
+        assert "displayName" not in learner and calls[1]["learner"] == learner
 
         replay = teacher.post(endpoint, headers=request_headers, json=job_body)
         assert replay.raise_for_status().json()["items"][0]["id"] == job_id
         changed = {**job_body, "pages": [{"number": 1, "blocks": [{"id": "p1b1", "text": "다른 자료"}]}]}
         assert teacher.post(endpoint, headers=request_headers, json=changed).status_code == 409
-        assert len(calls) == 1
+        assert len(calls) == 2
 
         def timeout_second_page(_key, _model, _instructions, data, *, for_pdf):
             assert data["page"] == 2 and for_pdf
@@ -121,7 +139,8 @@ def test_pdf_conversion_review_and_publishing(database, monkeypatch, tmp_path):
         draft = original.json()
         assert draft["status"] == "draft" and draft["content"]["hiddenBlockIds"] == ["p1b2"]
         assert draft["content"]["limitedSupportPages"] == [1]
-        assert draft["content"]["paragraphs"][0]["text"] == "교과 자료를 확인한다."
+        assert draft["content"]["paragraphs"][0]["text"] == original_text
+        assert draft["content"]["studyNotes"][0]["text"] == note
         assert all("정답" not in p["text"] for p in draft["content"]["paragraphs"])
 
         with TestClient(create_app(), base_url="http://testserver/api/v1") if database else TestClient(
@@ -136,7 +155,7 @@ def test_pdf_conversion_review_and_publishing(database, monkeypatch, tmp_path):
 
         first_tag = original.headers["etag"]
         patched = teacher.patch(path, headers={"If-Match": first_tag}, json={"content": {
-            **draft["content"], "paragraphs": [{"id": "p1b1", "text": "교과 자료를 확인한다.", "page": 1}],
+            **draft["content"], "paragraphs": [{"id": "p1b1", "text": original_text, "page": 1}],
         }}).raise_for_status()
         assert teacher.post(path + "/review", headers={"If-Match": first_tag}).status_code == 412
         reviewed = teacher.post(path + "/review", headers={"If-Match": patched.headers["etag"]}).raise_for_status()
@@ -153,7 +172,7 @@ def test_pdf_conversion_review_and_publishing(database, monkeypatch, tmp_path):
     with TestClient(create_app() if database else teacher.app, base_url="http://testserver/api/v1") as student:
         student.post("/auth/login", json=student_login).raise_for_status()
         visible = student.get(path).raise_for_status().json()
-        assert visible["content"]["paragraphs"][0]["text"] == "교과 자료를 확인한다."
+        assert visible["content"]["paragraphs"][0]["text"] == original_text
         assert visible["content"]["limitedSupportPages"] == [1]
         assert visible["originalContent"] is None
         entries = student.get(school + "/materials").raise_for_status().json()["items"]
@@ -250,14 +269,14 @@ def test_solar_pdf_keeps_source_order_and_validates_classification(row_ids, audi
         PdfBlock(id="p2b1", text="첫 문단입니다."), PdfBlock(id="p2b2", text="두 번째 문단입니다."),
     ])
     source = {"subject": "math", "unit": "비와 비율"}
-    learner = {"level": "intermediate", "nativeLanguage": "vi"}
+    learner = diagnosis("math", "intermediate")
     if expected_code is None:
-        result = convert_pdf(analyze, source, learner, [page])
+        result = convert_pdf(analyze, source, learner, "vi", [page])
         assert [row.id for row in result.paragraphs] == ["p2b1", "p2b2"]
         assert calls == [2]
     else:
         with pytest.raises(APIError) as error:
-            convert_pdf(analyze, source, learner, [page])
+            convert_pdf(analyze, source, learner, "vi", [page])
         assert error.value.code == expected_code
         assert error.value.details == {"page": 2}
         assert calls == [2, 2]
@@ -271,22 +290,28 @@ def test_pdf_keeps_usable_annotations_when_one_page_has_bad_optional_fields():
     ])
 
     def analyze(_instructions, request):
+        if request.get("stage") == "adaptation":
+            assert [block["id"] for block in request["blocks"]] == ["p2b1"]
+            return {
+                "blocks": [{"id": "p2b1", "rewrites": [
+                    {"from": "본떠", "to": "보고 따라"}, {"from": "나타냅니다", "to": ["보입니다"]},
+                ], "visual": {"kind": "list", "items": ["ㄱ", "ㄴ", "ㅁ", "ㅅ", "ㅇ", "ㅋ", "ㄲ"]}}],
+                "terms": {"자음자": {"easy": "자음을 쓰는 글자", "translation": None}, "모양": {"easy": False}},
+            }
         assert request["page"] == 2 and len(request["blocks"]) == 3
         return {
             "blocks": [
                 {"id": "p2b1", "role": "body", "audience": "student", "joins": None,
                  "terms": ["자음자", "모양"],
-                 "hard": [{"from": "본떠", "easy": "보고 따라", "note": None, "tier": 3},
-                          {"from": "나타냅니다", "easy": ["보입니다"], "tier": "3"}],
-                 "visual": {"kind": "list", "items": ["ㄱ", "ㄴ", "ㅁ", "ㅅ", "ㅇ", "ㅋ", "ㄲ"]}},
+                 "rewriteTargets": [{"from": "본떠", "basis": "subject"}, {"from": "나타냅니다", "basis": "subject"}],
+                 "readingHelp": "subject"},
                 {"id": "p2b2", "role": "other", "audience": "student", "terms": None},
-                {"id": "p2b3", "role": "body", "audience": "teacher", "hard": None},
+                {"id": "p2b3", "role": "body", "audience": "teacher"},
             ],
-            "terms": {"자음자": {"easy": "자음을 쓰는 글자", "translation": None}, "모양": {"easy": False}},
         }
 
     result = convert_pdf(analyze, {"subject": "korean", "unit": "한글"},
-                         {"level": "beginner", "nativeLanguage": "zh"}, [page])
+                         diagnosis("korean", "beginner"), "zh", [page])
     assert [(row.id, row.text) for row in result.paragraphs] == [
         ("p2b1", "자음자와 모양을 보고 따라 나타냅니다."), ("p2b2", "ㄱ ㅋ ㄲ"),
     ]
@@ -314,7 +339,7 @@ def test_pdf_recovers_missing_classification_without_revealing_known_teacher_con
         return {"blocks": [{"id": block["id"], "role": "body", "audience": "student"} for block in data["blocks"]]}
 
     result = convert_pdf(analyze, {"subject": "korean", "unit": "한글"},
-                         {"level": "intermediate", "nativeLanguage": "vi"}, [page])
+                         diagnosis("korean", "intermediate"), "vi", [page])
     assert len(requests) == 3
     assert result.limitedSupportPages == [2] and result.hiddenBlockIds == ["p2b2"]
     assert [row.id for row in result.paragraphs] == ["p2b1"]
@@ -333,34 +358,38 @@ def test_four_page_pdf_recovers_only_failed_pages_and_keeps_valid_support(monkey
         payload = json.loads(request.content)
         data = json.loads(payload["messages"][1]["content"])
         page = data["page"]
-        is_primary = "learner" in data
-        calls.append((page, "confirm" if "context" in data else "primary" if is_primary else "fallback"))
+        phase = "confirm" if "context" in data else data.get("stage", "primary" if "learner" in data else "fallback")
+        calls.append((page, phase))
         rows = [
             {"id": block["id"], "role": "body", "audience": "student"}
             for block in data["blocks"]
         ]
         terms = {}
-        if page == 1 and is_primary:
+        if page == 1 and phase == "primary":
             content = '{"blocks":[{"id":"p1b1","audience":'
         else:
-            if "context" in data:
+            if phase == "confirm":
                 assert page == 2 and [row["id"] for row in rows] == ["p2b2"]
                 rows[0].update(audience="teacher", evidence="지도 메모")
+            elif phase == "adaptation":
+                assert [row["id"] for row in rows] == [f"p{page}b1"]
+                if page == 2:
+                    rows[0]["rewrites"] = [{"from": "검토해 주세요", "to": "확인해 주세요"}]
+                elif page == 3:
+                    terms = {"단위": {"easy": "재는 데 쓰는 기준", "translation": "đơn vị"}}
+                else:
+                    rows[0]["visual"] = {"kind": "seq", "title": "비교 순서", "items": ["비교", "정리"]}
             elif page == 1:
                 rows[1]["audience"] = "teacher"
-            elif page == 2 and is_primary:
-                rows[0].update(
-                    hard=[{"from": "검증", "easy": "확인", "tier": "2-3"}],
-                    visual={"kind": "invalid", "items": [1, 2]},
-                )
+            elif page == 2 and phase == "primary":
+                rows[0]["rewriteTargets"] = [{"from": "검토해 주세요", "basis": "communication"}]
                 rows[1]["audience"] = "teacher"
                 rows.pop()
             elif page == 3:
                 rows[0]["terms"] = ["단위"]
-                terms = {"단위": {"easy": "재는 데 쓰는 기준", "translation": "đơn vị"}}
             elif page == 4:
-                rows[0]["visual"] = {"kind": "seq", "title": "비교 순서", "items": ["비교", "정리"]}
-                rows[1]["hard"] = [{"from": "그림 안내", "easy": "문장이 바뀜", "tier": "1"}]
+                rows[0]["readingHelp"] = "subject"
+                rows[1]["rewriteTargets"] = [{"from": "그림 안내", "basis": "communication"}]
             content = json.dumps({"blocks": rows, "terms": terms}, ensure_ascii=False)
 
         return httpx.Response(200, json={"choices": [{
@@ -377,7 +406,7 @@ def test_four_page_pdf_recovers_only_failed_pages_and_keeps_valid_support(monkey
             {"id": "p1b2", "text": "교사용 참고: 검토자에게 전달할 내용입니다."},
         ]},
         {"number": 2, "blocks": [
-            {"id": "p2b1", "text": "교과 자료를 검증한다."},
+            {"id": "p2b1", "text": "각 값을 검토해 주세요."},
             {"id": "p2b2", "text": "문제와 함께 검토할 지도 메모입니다."},
             {"id": "p2b3", "text": "자료를 읽으세요."},
         ]},
@@ -415,15 +444,15 @@ def test_four_page_pdf_recovers_only_failed_pages_and_keeps_valid_support(monkey
         assert replay.raise_for_status().json()["items"][0]["id"] == job_id
 
     assert calls == [
-        (1, "primary"), (1, "fallback"), (2, "primary"), (2, "fallback"), (2, "confirm"),
-        (3, "primary"), (4, "primary"),
+        (1, "primary"), (1, "fallback"), (2, "primary"), (2, "fallback"), (2, "confirm"), (2, "adaptation"),
+        (3, "primary"), (3, "adaptation"), (4, "primary"), (4, "adaptation"),
     ]
     assert content["limitedSupportPages"] == [1, 2]
     assert content["omittedPages"] == []
     assert content["hiddenBlockIds"] == ["p1b2", "p2b2"]
     assert [(row["id"], row["page"], row["text"]) for row in content["paragraphs"]] == [
         ("p1b1", 1, "자료를 검토해 주세요."),
-        ("p2b1", 2, "교과 자료를 확인한다."),
+        ("p2b1", 2, "각 값을 확인해 주세요."),
         ("p2b3", 2, "자료를 읽으세요."),
         ("p3b1", 3, "이 자료의 단위를 확인합니다."),
         ("p4b1", 4, "서로 비교하고 결과를 정리합니다."),
@@ -449,7 +478,7 @@ def test_pdf_retries_bad_completion_once_and_reports_page_if_recovery_fails(code
 
     with pytest.raises(APIError) as error:
         convert_pdf(analyze, {"subject": "math", "unit": ""},
-                    {"level": "intermediate", "nativeLanguage": "vi"}, [page])
+                    diagnosis("math", "intermediate"), "vi", [page])
     assert calls == [3, 3]
     assert error.value.code == code
     assert error.value.details["page"] == 3
@@ -466,7 +495,7 @@ def test_pdf_does_not_retry_timeout_or_content_filter(code):
 
     with pytest.raises(APIError) as error:
         convert_pdf(analyze, {"subject": "math", "unit": ""},
-                    {"level": "intermediate", "nativeLanguage": "vi"}, [page])
+                    diagnosis("math", "intermediate"), "vi", [page])
     assert calls == [3]
     assert error.value.code == code
     assert error.value.details["page"] == 3
@@ -481,11 +510,7 @@ def test_pdf_does_not_retry_timeout_or_content_filter(code):
 ])
 def test_pdf_accepts_keyed_blocks_and_glossary_shorthand(monkeypatch, glossary, translation, limited):
     completion = {
-        "blocks": {
-            "p1b2": {"role": "body", "audience": "student"},
-            "p1b1": {"role": "body", "audience": "student", "terms": "비율",
-                     "hard": [{"from": "검증", "easy": "확인", "tier": "2-3"}]},
-        },
+        "blocks": {"p1b1": {"rewrites": [{"from": "검증", "to": "확인"}]}},
         "terms": glossary,
     }
     requests = _mock_upstage(monkeypatch, content=json.dumps(completion, ensure_ascii=False))
@@ -495,10 +520,16 @@ def test_pdf_accepts_keyed_blocks_and_glossary_shorthand(monkeypatch, glossary, 
     ])
 
     def analyze(instructions, data):
-        return solar.complete_json("not-a-live-key", solar.DEFAULT_MODEL, instructions, data, for_pdf=True)
+        if data.get("stage") == "adaptation":
+            return solar.complete_json("not-a-live-key", solar.DEFAULT_MODEL, instructions, data, for_pdf=True)
+        return {"blocks": {
+            "p1b2": {"role": "body", "audience": "student"},
+            "p1b1": {"role": "body", "audience": "student", "terms": "비율",
+                     "rewriteTargets": [{"from": "검증", "basis": "subject"}]},
+        }}
 
     result = convert_pdf(analyze, {"subject": "math", "unit": "비와 비율"},
-                         {"level": "beginner", "nativeLanguage": "vi"}, [page])
+                         diagnosis("math", "beginner"), "vi", [page])
 
     assert len(requests) == 1
     assert result.limitedSupportPages == limited
@@ -520,15 +551,17 @@ def test_pdf_key_and_internal_id_conflict_only_reuses_unambiguous_rows():
 
     def analyze(instructions, request):
         requests.append(request)
+        if request.get("stage") == "adaptation":
+            assert [block["id"] for block in request["blocks"]] == ["p1b2"]
+            return {"blocks": [{"id": "p1b2", "rewrites": [{"from": "다른 값", "to": "다른 수"}]}]}
         if len(requests) == 1:
             return {
                 "blocks": {
                     "p1b1": {"id": "p1b2", "role": "body", "audience": "student", "terms": "비율",
-                             "hard": [{"from": "검증", "easy": "확인", "tier": "2-3"}]},
+                             "rewriteTargets": [{"from": "검증", "basis": "subject"}]},
                     "p1b2": {"role": "body", "audience": "student",
-                             "hard": [{"from": "다른 값", "easy": "다른 수", "tier": "2-3"}]},
+                             "rewriteTargets": [{"from": "다른 값", "basis": "subject"}]},
                 },
-                "terms": {"비율": "두 양을 비교한 값"},
             }
         assert "분류" in instructions
         assert set(request) == {"page", "subject", "unit", "blocks"}
@@ -537,9 +570,9 @@ def test_pdf_key_and_internal_id_conflict_only_reuses_unambiguous_rows():
         ]}
 
     result = convert_pdf(analyze, {"subject": "math", "unit": "비와 비율"},
-                         {"level": "beginner", "nativeLanguage": "vi"}, [page])
+                         diagnosis("math", "beginner"), "vi", [page])
 
-    assert len(requests) == 2 and result.limitedSupportPages == [1]
+    assert len(requests) == 3 and result.limitedSupportPages == [1]
     assert [row.text for row in result.paragraphs] == ["비율을 검증합니다.", "다른 수도 검증합니다."]
     assert not result.translations
 
@@ -548,23 +581,104 @@ def test_pdf_tracks_only_contextual_phrase_changes_and_preserves_quoted_text():
     original = "📘 소리를 내는 발음 기관을 관찰합니다. ‘관찰합니다’는 인용 표현입니다."
     page = PdfPage(number=1, blocks=[PdfBlock(id="p1b1", text=original)])
 
-    def analyze(_instructions, _request):
+    def analyze(_instructions, request):
+        if request.get("stage") == "adaptation":
+            assert request["blocks"][0]["rewriteTargets"] == [{"from": "관찰합니다", "basis": "subject"}]
+            return {"blocks": [{"id": "p1b1", "rewrites": [
+                {"from": "관찰합니다", "to": "살펴봅니다"}, {"from": "인용 표현", "to": "다른 표현"},
+            ]}], "terms": {"발음 기관": "소리를 내는 데 쓰이는 몸의 부분"}}
         return {"blocks": [{
             "id": "p1b1", "role": "body", "audience": "student",
-            "hard": [
-                {"from": "발음 기관", "easy": "소리를 내는 몸의 부분", "note": "몸의 부분", "tier": "3"},
-                {"from": "관찰합니다", "easy": "살펴봅니다", "tier": "3"},
-                {"from": "인용 표현", "easy": "인용 표현.", "tier": "3"},
+            "terms": ["발음 기관"],
+            "rewriteTargets": [
+                {"from": "발음 기관", "basis": "subject"},
+                {"from": "관찰합니다", "basis": "subject"},
             ],
         }]}
 
     result = convert_pdf(analyze, {"subject": "korean", "unit": "한글"},
-                         {"level": "advanced", "nativeLanguage": "zh"}, [page])
+                         diagnosis("korean", "beginner"), "zh", [page])
     paragraph, = result.paragraphs
-    assert paragraph.text == "📘 소리를 내는 발음 기관(몸의 부분)을 살펴봅니다. ‘관찰합니다’는 인용 표현입니다."
-    assert [change.original for change in paragraph.phraseChanges] == ["발음 기관", "관찰합니다"]
+    assert paragraph.text == "📘 소리를 내는 발음 기관을 살펴봅니다. ‘관찰합니다’는 인용 표현입니다."
+    assert result.limitedSupportPages == [1]
+    assert [change.original for change in paragraph.phraseChanges] == ["관찰합니다"]
     for change in paragraph.phraseChanges:
         assert paragraph.text[change.start:change.start + len(change.replacement)] == change.replacement
+
+
+@pytest.mark.parametrize(("level", "grade", "daily", "uses_subject_rewrite", "uses_subject_note"), [
+    ("below_beginner", "초급 미달", "intermediate", True, True),
+    ("intermediate", "중급", "intermediate", False, True),
+    ("advanced", "고급", "beginner", False, False),
+])
+def test_pdf_adapts_only_targets_allowed_by_subject_and_communication(
+    level, grade, daily, uses_subject_rewrite, uses_subject_note,
+):
+    body = "물의 온도가 12℃보다 내려갈 때 물의 상태가 어떻게 바뀌는지 주의 깊게 관찰합니다."
+    task = "모둠 친구들과 각자의 생각을 주고받고 함께 정리해 보세요."
+    subject_target = "상태가 어떻게 바뀌는지 주의 깊게 관찰합니다"
+    page = PdfPage(number=1, blocks=[
+        PdfBlock(id="p1b1", text=body),
+        PdfBlock(id="p1b2", text=task),
+        PdfBlock(id="p1b3", text="그림 속의 온도 표시", layout="image"),
+    ])
+
+    def analyze(_instructions, request):
+        learner = request["learner"]
+        assert learner["subjectCriterion"]["grade"] == grade  # 교과 등급이 읽기 결과보다 우선
+        assert "과학" in learner["subjectCriterion"]["learnerState"]
+        if level == "below_beginner":
+            assert "초급 기준" in learner["subjectCriterion"]["guidance"]
+        if request.get("stage") == "adaptation":
+            selected = {row["id"]: row for row in request["blocks"]}
+            assert selected["p1b1"]["rewriteTargets"] == (
+                [{"from": subject_target, "basis": "subject"}] if uses_subject_rewrite else []
+            )
+            assert selected["p1b1"]["readingHelp"] == ("subject" if uses_subject_note else None)
+            assert ("p1b2" in selected) == (daily == "beginner")
+            assert "p1b3" not in selected
+            return {"blocks": [
+                {"id": "p1b1", "rewrites": [
+                    {"from": row["from"], "to": "상태가 어떻게 바뀌는지 잘 살펴봅니다"}
+                    for row in selected["p1b1"]["rewriteTargets"]
+                ], "note": "온도가 내려갈 때 물의 모습을 살펴봐요."},
+                *([{"id": "p1b2", "rewrites": [{"from": task, "to": "친구와 생각을 말해 보세요. 함께 정리해 보세요."}]}]
+                  if "p1b2" in selected else []),
+            ], "terms": {"온도": "따뜻하거나 차가운 정도"}}
+        return {"blocks": [
+            {"id": "p1b1", "role": "body", "audience": "student", "terms": ["온도"], "readingHelp": "subject",
+             "rewriteTargets": [{"from": subject_target, "basis": "subject"}, {"from": "12℃보다", "basis": "subject"}]},
+            {"id": "p1b2", "role": "question", "audience": "student",
+             "rewriteTargets": [{"from": task, "basis": "communication"}]},
+            {"id": "p1b3", "role": "body", "audience": "student",
+             "rewriteTargets": [{"from": "그림 속의 온도 표시", "basis": "subject"}]},
+        ]}
+
+    result = convert_pdf(analyze, {"subject": "science", "unit": "물질"},
+                         diagnosis("science", level, daily=daily, reading="beginner"), "ko", [page])
+    paragraph, activity, image = result.paragraphs
+    assert paragraph.text == (body.replace(subject_target, "상태가 어떻게 바뀌는지 잘 살펴봅니다") if uses_subject_rewrite else body)
+    assert bool(result.studyNotes) == uses_subject_note
+    assert activity.text == ("친구와 생각을 말해 보세요. 함께 정리해 보세요." if daily == "beginner" else task)
+    assert image.text == "그림 속의 온도 표시"
+    assert result.translations[0]["term"] == "온도"
+
+
+def test_pdf_keeps_classified_page_when_adaptation_json_fails():
+    page = PdfPage(number=1, blocks=[PdfBlock(id="p1b1", text="사건의 전개를 정리해요.")])
+    calls = []
+
+    def analyze(_instructions, request):
+        calls.append(request)
+        if request.get("stage") == "adaptation":
+            raise APIError(502, "SOLAR_OUTPUT_JSON_INVALID", solar.ERROR_MESSAGES["SOLAR_OUTPUT_JSON_INVALID"])
+        return {"blocks": [{"id": "p1b1", "role": "body", "audience": "student", "readingHelp": "subject"}]}
+
+    result = convert_pdf(analyze, {"subject": "social", "unit": "역사"},
+                         diagnosis("social", "intermediate"), "vi", [page])
+    assert len(calls) == 2
+    assert result.limitedSupportPages == [1]
+    assert result.paragraphs[0].text == "사건의 전개를 정리해요."
 
 
 def test_pdf_protects_layout_and_confirms_only_plausible_teacher_blocks():
@@ -586,6 +700,12 @@ def test_pdf_protects_layout_and_confirms_only_plausible_teacher_blocks():
 
     def analyze(instructions, request):
         requests.append(request)
+        if request.get("stage") == "adaptation":
+            assert [row["id"] for row in request["blocks"]] == ["p4b8", "p4b12"]
+            return {"blocks": [
+                {"id": "p4b8", "rewrites": [{"from": "검증", "to": "확인"}]},
+                {"id": "p4b12", "rewrites": [{"from": "알맞은", "to": "맞는"}]},
+            ]}
         if "learner" not in request:
             assert "실제로 교사에게만" in instructions
             assert [row["id"] for row in request["blocks"]] == ["p4b5", "p4b9", "p4b10"]
@@ -603,18 +723,18 @@ def test_pdf_protects_layout_and_confirms_only_plausible_teacher_blocks():
         return {"blocks": [
             {"id": block.id, "role": "body",
              "audience": "student" if block.id in {"p4b6", "p4b8", "p4b11", "p4b12"} else "teacher",
-             "hard": [
-                 {"from": "검증", "easy": "확인", "tier": "2-3"},
-                 {"from": "닮은", "easy": "비슷한", "tier": "2-3"},
-                 {"from": "알맞은", "easy": "맞는", "tier": "2-3"},
+             "rewriteTargets": [
+                 {"from": "검증", "basis": "subject"},
+                 {"from": "닮은", "basis": "subject"},
+                 {"from": "알맞은", "basis": "subject"},
              ]}
             for block in page.blocks
         ]}
 
     result = convert_pdf(analyze, {"subject": "korean", "unit": "한글"},
-                         {"level": "beginner", "nativeLanguage": "vi"}, [page])
+                         diagnosis("korean", "beginner"), "vi", [page])
 
-    assert len(requests) == 2
+    assert len(requests) == 3
     assert result.hiddenBlockIds == ["p4b6", "p4b9", "p4b10"]
     assert result.limitedSupportPages == [4]
     text_by_id = {row.id: row.text for row in result.paragraphs}
@@ -646,7 +766,7 @@ def test_pdf_refuses_uncertain_teacher_confirmation(audience, evidence):
 
     with pytest.raises(APIError) as error:
         convert_pdf(analyze, {"subject": "korean", "unit": "한글"},
-                    {"level": "beginner", "nativeLanguage": "vi"}, [page])
+                    diagnosis("korean", "beginner"), "vi", [page])
     assert len(requests) == 2
     assert error.value.code == "SOLAR_AUDIENCE_UNCERTAIN"
     assert error.value.details["page"] == 2
@@ -662,6 +782,6 @@ def test_pdf_explicit_teacher_label_in_protected_geometry_fails_closed():
 
     with pytest.raises(APIError) as error:
         convert_pdf(analyze, {"subject": "korean", "unit": "한글"},
-                    {"level": "beginner", "nativeLanguage": "vi"}, [page])
+                    diagnosis("korean", "beginner"), "vi", [page])
     assert error.value.code == "SOLAR_AUDIENCE_UNCERTAIN"
     assert error.value.details["page"] == 2

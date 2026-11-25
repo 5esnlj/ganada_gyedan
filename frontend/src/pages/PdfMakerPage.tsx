@@ -195,15 +195,17 @@ function SourceSettings({ classId, source, pdf, targets, onQueued }: {
             {!targets.length && <p>클래스에 등록된 학생이 없습니다.</p>}
             {targets.map((student) => {
               const diagnosed = student.diagnosticStatus === 'completed';
-              const level = student.partResults.find((part) => part.area === source.subject && part.skill === 'reading')?.level;
+              const subjectLevel = student.areaResults.find((area) => area.area === source.subject)?.level;
+              const readingLevel = student.partResults.find((part) => part.area === source.subject && part.skill === 'reading')?.level;
+              const level = subjectLevel ?? readingLevel;
               const checked = selected.includes(student.id);
               return (
                 <label key={student.id} className={styles.target}>
                   <input type="checkbox" checked={checked} disabled={!diagnosed || !level || (!checked && selected.length >= 30)}
                     onChange={() => toggle(student.id)} />
                   <span>{student.displayName} <small>· {languageLabel(student.nativeLanguage)}</small></span>
-                  {diagnosed && level ? <span className={styles.reading}>읽기 <LevelPill level={LEVEL_LABELS[level]} /></span>
-                    : <small>{diagnosed ? '담당 교과 읽기 결과 없음' : '진단 미완료'}</small>}
+                  {diagnosed && level ? <span className={styles.reading}>{subjectLevel ? SUBJECT_LABELS[source.subject] : '읽기'} <LevelPill level={LEVEL_LABELS[level]} /></span>
+                    : <small>{diagnosed ? '담당 교과 진단 결과 없음' : '진단 미완료'}</small>}
                 </label>
               );
             })}

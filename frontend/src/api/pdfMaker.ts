@@ -47,6 +47,7 @@ export type MaterialContent = {
   paragraphs: { id: string; text: string; page?: number | null }[];
   translations: Record<string, string>[];
   omittedPages: number[];
+  limitedSupportPages?: number[];
   hiddenBlockIds?: string[];
   studyNotes?: {
     blockId: string;

@@ -153,6 +153,7 @@ export async function renderConvertedPages(pages: readonly PdfPage[], content: C
   const output: PdfPreview = { pages: [], notices: [] };
   const paragraphs = new Map(content.paragraphs.map(paragraph => [paragraph.id, paragraph]));
   const omitted = new Set(content.omittedPages);
+  const limitedSupport = new Set(content.limitedSupportPages);
   const hidden = new Set(content.hiddenBlockIds);
   const ids = new Set(pages.flatMap(page => page.blocks.map(block => block.id)));
   for (const id of hidden) {
@@ -162,6 +163,9 @@ export async function renderConvertedPages(pages: readonly PdfPage[], content: C
     const original = { number: page.number, width: page.width, height: page.height, imageUrl: page.imageUrl };
     const omittedPage = Boolean(page.fallback) || omitted.has(page.number);
     if (omittedPage) output.notices.push(page.fallback ?? `${page.number}쪽은 원본 지면을 유지했습니다.`);
+    if (limitedSupport.has(page.number)) {
+      output.notices.push(`${page.number}쪽은 일부 쉬운 표현이나 학습 도움말을 적용하지 못했습니다. 배포 전에 원본과 비교해 주세요.`);
+    }
     const changes = omittedPage ? [] : page.blocks.flatMap(block => {
       const paragraph = paragraphs.get(block.id);
       const text = paragraph?.text.replace(/‸/g, ' ').trim();

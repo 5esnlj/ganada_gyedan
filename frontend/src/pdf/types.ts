@@ -56,6 +56,7 @@ export interface ConversionPage {
 export interface ConvertedPdfContent {
   paragraphs: readonly { id: string; text: string; page: number | null }[];
   omittedPages?: readonly number[];
+  limitedSupportPages?: readonly number[];
   hiddenBlockIds?: readonly string[];
 }
 

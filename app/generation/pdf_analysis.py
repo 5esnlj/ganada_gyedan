@@ -21,6 +21,7 @@ ROLE = TypeAdapter(Role)
 BOOL = TypeAdapter(StrictBool)
 JOINS = TypeAdapter(Annotated[list[StrictBool], Field(max_length=12_000)])
 TERM = TypeAdapter(Annotated[str, StringConstraints(strip_whitespace=True, min_length=2, max_length=300)])
+TRANSLATION = TypeAdapter(Annotated[str, StringConstraints(strip_whitespace=True, max_length=300)])
 STUDY_TEXT = TypeAdapter(Annotated[str, Field(min_length=1, max_length=10_000, pattern=r"\S")])
 
 CLASSIFICATION_INSTRUCTIONS = """PDF 학습 자료의 문단을 분류한다.
@@ -28,8 +29,17 @@ CLASSIFICATION_INSTRUCTIONS = """PDF 학습 자료의 문단을 분류한다.
 본문과 학생 활동의 audience는 student로 한다. 교사용 주석, 정답, 예시 답안, 해설, 채점 기준,
 지도 방안의 audience는 teacher로 한다. role은 title, heading, body, caption, question, other 중 하나다.
 preserve가 true이거나 문학 작품 인용, 문제의 보기나 선택지, 수식, 표 수치이면 protect는 true다.
-용어, 바꿀 표현, 설명, 그림을 생성하지 않는다. 다음 형태의 JSON 객체 하나만 출력한다.
+다음 네 필드만 사용한다. 코드 펜스나 설명 없이 닫는 괄호까지 JSON 객체 하나만 출력한다.
 {"blocks":[{"id":"원래 id","role":"body","audience":"student","protect":false}]}"""
+
+RETRYABLE_OUTPUT_ERRORS = frozenset({
+    "SOLAR_RESPONSE_INVALID",
+    "SOLAR_OUTPUT_EMPTY",
+    "SOLAR_OUTPUT_TRUNCATED",
+    "SOLAR_OUTPUT_JSON_INVALID",
+    "SOLAR_OUTPUT_SCHEMA",
+    "SOLAR_OUTPUT_BLOCKS",
+})
 
 T = TypeVar("T")
 logger = logging.getLogger(__name__)
@@ -37,6 +47,11 @@ logger = logging.getLogger(__name__)
 
 def _normalized(value: object) -> object:
     return value.strip().lower() if isinstance(value, str) else value
+
+
+def _normalize_audience(value: object) -> object:
+    value = _normalized(value)
+    return AUDIENCE_ALIASES.get(value, value) if isinstance(value, str) else value
 
 
 class _BlockIdentity(BaseModel):
@@ -51,8 +66,7 @@ class _BlockIdentity(BaseModel):
     @field_validator("audience", mode="before")
     @classmethod
     def normalize_audience(cls, value):
-        value = _normalized(value)
-        return AUDIENCE_ALIASES.get(value, value) if isinstance(value, str) else value
+        return _normalize_audience(value)
 
 
 class _PageIdentities(BaseModel):
@@ -72,8 +86,8 @@ class HardExpression(BaseModel):
 
     @field_validator("tier", mode="before")
     @classmethod
-    def numeric_tier(cls, value):
-        return str(value) if type(value) is int else value
+    def normalize_tier(cls, value):
+        return str(value) if type(value) is int else _normalized(value)
 
 
 class TermDefinition(BaseModel):
@@ -81,11 +95,6 @@ class TermDefinition(BaseModel):
 
     easy: str = Field(min_length=1, max_length=300, pattern=r"\S")
     translation: str = Field(default="", max_length=300)
-
-    @field_validator("translation", mode="before")
-    @classmethod
-    def empty_translation(cls, value):
-        return "" if value is None else value
 
 
 @dataclass
@@ -143,19 +152,37 @@ class _AnnotationReader:
     def glossary(self, value: object, referenced_terms: set[str]) -> dict[str, TermDefinition]:
         if value is None:
             return {}
-        if not isinstance(value, dict):
+        if isinstance(value, dict):
+            entries = value.items()
+        elif isinstance(value, list):
+            entries = ((entry.get("term") if isinstance(entry, dict) else None, entry) for entry in value)
+        else:
             self.limited_support = True
             return {}
-        definitions = {}
-        for term, raw_definition in value.items():
-            if not isinstance(term, str) or term.strip() not in referenced_terms:
+        definitions: dict[str, TermDefinition] = {}
+        for term, raw_definition in entries:
+            if not isinstance(term, str):
+                self.limited_support = True
+                continue
+            term = term.strip()
+            if term not in referenced_terms:
+                continue
+            if term in definitions:
+                self.limited_support = True
                 continue
             if len(definitions) == 10:
                 self.limited_support = True
                 break
+            if isinstance(raw_definition, str):
+                raw_definition = {"easy": raw_definition}
+            elif isinstance(raw_definition, dict):
+                raw_definition = {
+                    "easy": raw_definition.get("easy", raw_definition.get("meaning")),
+                    "translation": self.read(raw_definition.get("translation"), TRANSLATION.validate_python) or "",
+                }
             definition = self.read(raw_definition, TermDefinition.model_validate)
             if definition is not None:
-                definitions[term.strip()] = definition
+                definitions[term] = definition
             else:
                 self.limited_support = True
         return definitions
@@ -172,9 +199,38 @@ def _visual(value: object) -> StudyVisual:
     return StudyVisual.model_validate(value)
 
 
-def _parse_page(response: dict, page: PdfPage, confirmed_teacher_ids: frozenset[str] = frozenset()) -> PageAnalysis:
+def _block_rows(response: object) -> list | None:
+    blocks = response.get("blocks") if isinstance(response, dict) else None
+    if isinstance(blocks, list):
+        return blocks
+    if isinstance(blocks, dict):
+        return [
+            {**row, "id": key}
+            if isinstance(row, dict) and _normalized(row.get("id", key)) == _normalized(key) else None
+            for key, row in blocks.items()
+        ]
+    return None
+
+
+def _previous_classification(rows: list | None) -> tuple[dict[str, dict], set[str]]:
+    unique = {}
+    repeated = set()
+    teacher_ids = set()
+    for raw in rows or []:
+        if not isinstance(raw, dict) or not isinstance(block_id := _normalized(raw.get("id")), str):
+            continue
+        if _normalize_audience(raw.get("audience")) == "teacher":
+            teacher_ids.add(block_id)
+        if block_id in unique:
+            repeated.add(block_id)
+        unique[block_id] = raw
+    return {block_id: row for block_id, row in unique.items() if block_id not in repeated}, teacher_ids
+
+
+def _parse_page(response: dict, page: PdfPage, previous: dict | None = None) -> PageAnalysis:
+    rows = _block_rows(response)
     try:
-        identities = _PageIdentities.model_validate(response).blocks
+        identities = _PageIdentities.model_validate({"blocks": rows}).blocks
     except ValidationError:
         code = "SOLAR_OUTPUT_SCHEMA"
         fail(502, code, ERROR_MESSAGES[code], {"page": page.number})
@@ -184,24 +240,34 @@ def _parse_page(response: dict, page: PdfPage, confirmed_teacher_ids: frozenset[
         code = "SOLAR_OUTPUT_BLOCKS"
         fail(502, code, ERROR_MESSAGES[code], {"page": page.number})
 
-    reader = _AnnotationReader()
+    prior_rows, confirmed_teacher_ids = _previous_classification(_block_rows(previous))
+    reader = _AnnotationReader(limited_support=previous is not None)
     classified = {}
-    for identity, raw in zip(identities, response["blocks"], strict=True):
+    for identity, raw in zip(identities, rows, strict=True):
         audience = "teacher" if identity.id in confirmed_teacher_ids else identity.audience
         role = reader.read(_normalized(raw.get("role")), ROLE.validate_python)
         protect_value = reader.read(raw.get("protect", False), BOOL.validate_python)
         # Keep the text in place when either its role or its protection is ambiguous.
         protected = role is None or protect_value is not False
+        if previous is not None:
+            # The retry only classifies. Reuse existing annotations for uniquely identified student blocks.
+            raw = prior_rows.get(identity.id, {})
+            protected = protected or raw.get("protect", False) is not False
+            if _normalize_audience(raw.get("audience")) != "student" or _normalized(raw.get("role")) != role:
+                raw = {}
         if role is None or protect_value is None:
             reader.limited_support = True
         can_join = audience == "student" and not (originals[identity.id].preserve or protected)
         editable = can_join and role != "other"
+        terms = raw.get("terms")
+        if isinstance(terms, str):
+            terms = [terms]
         classified[identity.id] = AnalyzedBlock(
             audience=audience,
             role=role or "other",
             protect=protected,
             joins=(reader.read(raw.get("joins"), JOINS.validate_python) or []) if can_join else [],
-            terms=reader.items(raw.get("terms"), TERM.validate_python, 3) if editable else [],
+            terms=reader.items(terms, TERM.validate_python, 3) if editable else [],
             hard=reader.items(raw.get("hard"), HardExpression.model_validate, 10) if editable else [],
             easy_low=reader.read(raw.get("easy_low"), STUDY_TEXT.validate_python) if editable else None,
             easy_mid=reader.read(raw.get("easy_mid"), STUDY_TEXT.validate_python) if editable else None,
@@ -209,19 +275,8 @@ def _parse_page(response: dict, page: PdfPage, confirmed_teacher_ids: frozenset[
             visual=reader.read(raw.get("visual"), _visual) if editable else None,
         )
     referenced = {term for block in classified.values() for term in block.terms}
-    terms = reader.glossary(response.get("terms"), referenced)
+    terms = reader.glossary((previous if previous is not None else response).get("terms"), referenced)
     return PageAnalysis(classified, terms, reader.limited_support)
-
-
-def _teacher_ids(response: object) -> frozenset[str]:
-    blocks = response.get("blocks") if isinstance(response, dict) else None
-    if not isinstance(blocks, list):
-        return frozenset()
-    return frozenset(
-        raw["id"].strip().lower() for raw in blocks
-        if isinstance(raw, dict) and isinstance(raw.get("id"), str)
-        and _normalized(raw.get("audience")) in ("teacher", "교사", "교사용")
-    )
 
 
 def analyze_page(call: Callable[[str, dict], dict], instructions: str, request: dict, page: PdfPage) -> PageAnalysis:
@@ -231,17 +286,16 @@ def analyze_page(call: Callable[[str, dict], dict], instructions: str, request: 
         except APIError as error:
             raise APIError(error.status, error.code, error.message, {"page": page.number}) from error
 
-    response = complete(instructions, request)
+    response = {}
     try:
+        response = complete(instructions, request)
         return _parse_page(response, page)
     except APIError as error:
-        if error.code not in {"SOLAR_OUTPUT_SCHEMA", "SOLAR_OUTPUT_BLOCKS"}:
+        if error.code not in RETRYABLE_OUTPUT_ERRORS:
             raise
         logger.info("Retrying PDF classification (page=%s, code=%s)", page.number, error.code)
 
-    # A missing ID or audience needs a classification, even if study annotations are unusable.
+    # A compact classification can recover a page even when its first answer could not be decoded.
     retry_input = {key: request[key] for key in ("page", "subject", "unit", "blocks")}
     retry = complete(CLASSIFICATION_INSTRUCTIONS, retry_input)
-    analysis = _parse_page(retry, page, _teacher_ids(response))
-    analysis.limited_support = True
-    return analysis
+    return _parse_page(retry, page, response)

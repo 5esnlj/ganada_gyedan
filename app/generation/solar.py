@@ -14,6 +14,10 @@ from app.core.errors import fail
 SOLAR_URL = "https://api.upstage.ai/v1/chat/completions"
 DEFAULT_MODEL = "solar-pro4"
 FENCED_JSON = re.compile(r"^[ \t]*```(?:json)?[ \t]*\r?\n(.*?)```[ \t]*$", re.I | re.M | re.S)
+PDF_JSON_FENCE = re.compile(
+    r"^[ \t]*```(?:json)?[ \t]*\r?\n(.*?)^[ \t]*```[ \t]*\r?$",
+    re.I | re.M | re.S,
+)
 FINISH_ERRORS = {"length": "SOLAR_OUTPUT_TRUNCATED", "content_filter": "SOLAR_OUTPUT_FILTERED"}
 PDF_READ_TIMEOUT = 180.0
 logger = logging.getLogger(__name__)
@@ -106,28 +110,168 @@ def complete_json(api_key: str, model: str, instructions: str, data: dict[str, A
     if not response.is_success:
         fail(502, "SOLAR_UNAVAILABLE", ERROR_MESSAGES["SOLAR_UNAVAILABLE"])
 
-    return _completion_object(response)
+    return _completion_object(response, for_pdf=for_pdf, page=data.get("page") if for_pdf else None)
 
 
-def _completion_object(response: httpx.Response) -> dict:
+class _PdfJsonError(ValueError):
+    """A fixed reason suitable for logging without including provider content."""
+
+
+def _unique_keys(pairs: list[tuple[str, Any]]) -> dict:
+    result = {}
+    for key, value in pairs:
+        if key in result:
+            raise _PdfJsonError("duplicate_key")
+        result[key] = value
+    return result
+
+
+def _reject_constant(_constant: str) -> None:
+    raise _PdfJsonError("invalid_constant")
+
+
+PDF_JSON_DECODER = json.JSONDecoder(object_pairs_hook=_unique_keys, parse_constant=_reject_constant)
+
+
+def _strip_trailing_commas(text: str) -> str:
+    # Change only a comma following a value before a closing bracket or brace.
+    chars = list(text)
+    quoted = escaped = False
+    previous = ""
+    for index, character in enumerate(text):
+        if quoted:
+            if escaped:
+                escaped = False
+            elif character == "\\":
+                escaped = True
+            elif character == '"':
+                quoted = False
+            continue
+        if character == '"':
+            quoted = True
+        elif character == "," and previous and previous not in "{[,:":
+            end = index + 1
+            while end < len(text) and text[end] in " \t\r\n":
+                end += 1
+            if end < len(text) and text[end] in "]}":
+                chars[index] = " "
+        if character not in " \t\r\n":
+            previous = character
+    return "".join(chars)
+
+
+def _pdf_prose(text: str) -> bool:
+    text = text.strip()
+    if not text or text in {".", "。"}:
+        return True
+    if any(character in text for character in '{}[]"\x60\ufeff'):
+        return False
+    if text.strip(".,:!?;… ").lower() in {"null", "true", "false", "nan", "infinity", "-infinity"}:
+        return False
+    return any(character.isalpha() for character in text)
+
+
+def _clean_pdf_json(text: str) -> str:
+    return text.strip().removeprefix("\ufeff").strip()
+
+
+def _pdf_completion_json(content: str) -> dict:
+    text = _clean_pdf_json(content)
+    fences = list(PDF_JSON_FENCE.finditer(text))
+    if fences:
+        fence = fences[0]
+        if len(fences) != 1 or not _pdf_prose(text[:fence.start()]) or not _pdf_prose(text[fence.end():]):
+            raise _PdfJsonError("ambiguous_envelope")
+        value = PDF_JSON_DECODER.decode(_strip_trailing_commas(_clean_pdf_json(fence[1])))
+    else:
+        # Start at the outermost value, so a valid nested object cannot rescue a
+        # truncated outer response. Encoded strings must consume the whole text.
+        start = re.search(r"[{\[]", text) if not text.startswith('"') else None
+        if start is None and not text.startswith('"'):
+            raise _PdfJsonError("no_json")
+        offset = start.start() if start else 0
+        if not _pdf_prose(text[:offset]):
+            raise _PdfJsonError("ambiguous_envelope")
+        candidate = _strip_trailing_commas(text[offset:])
+        value, end = PDF_JSON_DECODER.raw_decode(candidate)
+        if not _pdf_prose(candidate[end:]) or (isinstance(value, str) and candidate[end:].strip()):
+            raise _PdfJsonError("ambiguous_envelope")
+
+    if isinstance(value, str):
+        value = PDF_JSON_DECODER.decode(_strip_trailing_commas(_clean_pdf_json(value)))
+    if isinstance(value, list) and len(value) == 1:
+        value = value[0]
+    if not isinstance(value, dict):
+        raise _PdfJsonError("not_one_object")
+    return value
+
+
+def _log_pdf_completion(page: object, reason: str, size: int) -> None:
+    logger.warning("Solar PDF completion rejected (page=%s, reason=%s, size=%s)",
+                   page if type(page) is int else None, reason, size)
+
+
+def _pdf_text_parts(content: list, page: object, size: int) -> str | list:
+    if any(isinstance(part, dict) and part.get("type") == "refusal" for part in content):
+        _log_pdf_completion(page, "refusal", size)
+        fail(502, "SOLAR_OUTPUT_FILTERED", ERROR_MESSAGES["SOLAR_OUTPUT_FILTERED"])
+    if content and all(
+        isinstance(part, dict) and part.keys() == {"type", "text"}
+        and part["type"] == "text" and isinstance(part["text"], str)
+        for part in content
+    ):
+        return "".join(part["text"] for part in content)
+    return content
+
+
+def _completion_object(response: httpx.Response, *, for_pdf: bool = False, page: object = None) -> dict:
     try:
-        choice = response.json()["choices"][0]
+        envelope = response.json(object_pairs_hook=_unique_keys) if for_pdf else response.json()
+        choice = envelope["choices"][0]
         finish_reason = choice.get("finish_reason")
     except (KeyError, IndexError, TypeError, AttributeError, ValueError):
+        if for_pdf:
+            _log_pdf_completion(page, "response_shape", len(response.content))
         fail(502, "SOLAR_RESPONSE_INVALID", ERROR_MESSAGES["SOLAR_RESPONSE_INVALID"])
 
     if isinstance(finish_reason, str) and finish_reason in FINISH_ERRORS:
         code = FINISH_ERRORS[finish_reason]
+        if for_pdf:
+            _log_pdf_completion(page, finish_reason, len(response.content))
         fail(502, code, ERROR_MESSAGES[code])
 
-    try:
-        content = choice["message"]["content"]
-    except (KeyError, TypeError):
+    message = choice.get("message")
+    content = message.get("content") if isinstance(message, dict) else None
+    if for_pdf and isinstance(content, list):
+        content = _pdf_text_parts(content, page, len(response.content))
+    if for_pdf and isinstance(message, dict):
+        refusal = message.get("refusal")
+        no_answer = content is None or content == [] or (isinstance(content, str) and not content.strip())
+        if isinstance(refusal, str) and refusal.strip() and no_answer:
+            _log_pdf_completion(page, "refusal", len(response.content))
+            fail(502, "SOLAR_OUTPUT_FILTERED", ERROR_MESSAGES["SOLAR_OUTPUT_FILTERED"])
+
+    if not isinstance(message, dict) or "content" not in message:
+        if for_pdf:
+            _log_pdf_completion(page, "missing_content", len(response.content))
         fail(502, "SOLAR_RESPONSE_INVALID", ERROR_MESSAGES["SOLAR_RESPONSE_INVALID"])
     if content is None or (isinstance(content, str) and not content.strip()):
+        if for_pdf:
+            _log_pdf_completion(page, "empty_content", len(content or ""))
         fail(502, "SOLAR_OUTPUT_EMPTY", ERROR_MESSAGES["SOLAR_OUTPUT_EMPTY"])
     if not isinstance(content, str):
+        if for_pdf:
+            _log_pdf_completion(page, "content_shape", len(response.content))
         fail(502, "SOLAR_RESPONSE_INVALID", ERROR_MESSAGES["SOLAR_RESPONSE_INVALID"])
+
+    if for_pdf:
+        try:
+            return _pdf_completion_json(content)
+        except _PdfJsonError as error:
+            _log_pdf_completion(page, str(error), len(content))
+        except (ValueError, RecursionError):
+            _log_pdf_completion(page, "invalid_json", len(content))
+        fail(502, "SOLAR_OUTPUT_JSON_INVALID", ERROR_MESSAGES["SOLAR_OUTPUT_JSON_INVALID"])
 
     text = content.strip()
     if not text.startswith("{"):

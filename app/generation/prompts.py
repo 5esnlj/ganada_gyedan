@@ -56,7 +56,7 @@ CONVERT_INSTRUCTIONS = """다문화 학생을 위한 '학습 한국어' PDF 교�
 - tier: "1" 생활 한국어, "2-1" 교실 어휘, "2-2" 사고 도구, "2-3" 범용 지식 어휘, "3" 교과 적응 한국어.
 - terms의 쉬운 뜻(easy)은 한 문장이다. translation에는 이 학습자의 nativeLanguage에 해당 교과에서 실제 쓰는 대역만 적는다. 한국어 또는 언어 미지정이면 빈 문자열이다.
 - 학생 내용에 교사용 답·해설을 넣지 않는다.
-- easy_low와 easy_mid는 원래 칸에 넣는 글과 별개의 펼쳐 보는 쉬운 글이다. easy_low는 읽기 2 수준(짧은 문장, 해요체), easy_mid는 읽기 4 수준(해라체)이다. 숫자·인용·개념어를 보존한다. 제목·한두 낱말은 null. dense는 읽기 5 수준에서도 어려운 정의·법조문 등일 때 true다.
+- 펼쳐 보는 쉬운 글은 원래 칸에 넣는 내용과 별개다. learner.readingLevel이 3 이하이면 easy_low(짧은 문장, 해요체), 4이면 easy_mid(해라체)만 적는다. 5에서는 특히 어려운 정의나 법조문인 경우에만 dense=true와 easy_mid를 적는다. 숫자·인용·개념어는 보존하고 제목·한두 낱말에는 추가 글을 쓰지 않는다.
 - visual은 관계(rel), 순서(seq), 목록(list)가 분명한 본문일 때만 kind·title·center·items(2~6개)를 쓴다. rel의 연결 중심이 없거나 내용이 불명확하면 null.
 JSON 객체 하나만 반환한다. 인사말, 설명, Markdown 코드 펜스는 붙이지 않는다.
 blocks는 빠짐없이 반환하고 각 블록의 id, role, audience는 항상 적는다. preserve=true인 블록에서는 protect=true도 적는다.

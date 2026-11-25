@@ -175,7 +175,9 @@ def succeed(store, job, draft, database):
 
 
 def failed(store, job_id, code, database, page=None):
-    status = "unknown" if code in {"SOLAR_TIMEOUT", "DATABASE_UNAVAILABLE", "GENERATION_INTERRUPTED"} else "failed"
+    status = "unknown" if code in {
+        "SOLAR_TIMEOUT", "SOLAR_READ_TIMEOUT", "DATABASE_UNAVAILABLE", "GENERATION_INTERRUPTED",
+    } else "failed"
     if database:
         with transaction() as cursor:
             cursor.execute(

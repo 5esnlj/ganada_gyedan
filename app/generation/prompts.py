@@ -3,24 +3,19 @@
 import re
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass
-from typing import Literal
 
-from pydantic import Field, ValidationError
-
-from app.core.dto import Input
-from app.core.errors import APIError, fail
+from app.core.errors import fail
 from app.core.state import Record
-from app.materials.dto import Content, Paragraph, StudyNote, StudyVisual
+from app.materials.dto import Content, Paragraph, StudyNote
 
 from .dto import PdfBlock, PdfPage
+from .pdf_analysis import AnalyzedBlock, HardExpression, TermDefinition, Tier, analyze_page
 from .solar import ERROR_MESSAGES
 
 
 MAX_PAGE_CHARS = 12_000
-MAX_PAGE_BLOCKS = 200
 MAX_TOTAL_BLOCKS = 500
 
-Tier = Literal["1", "2-1", "2-2", "2-3", "3"]
 TIERS: tuple[Tier, ...] = ("1", "2-1", "2-2", "2-3", "3")
 # Reading levels available in 가나다계단 map to the prototype's text treatment profiles.
 # These values guide reconstruction and are not separate measured diagnostic scores.
@@ -64,44 +59,12 @@ CONVERT_INSTRUCTIONS = """다문화 학생을 위한 '학습 한국어' PDF 교�
 - easy_low와 easy_mid는 원래 칸에 넣는 글과 별개의 펼쳐 보는 쉬운 글이다. easy_low는 읽기 2 수준(짧은 문장, 해요체), easy_mid는 읽기 4 수준(해라체)이다. 숫자·인용·개념어를 보존한다. 제목·한두 낱말은 null. dense는 읽기 5 수준에서도 어려운 정의·법조문 등일 때 true다.
 - visual은 관계(rel), 순서(seq), 목록(list)가 분명한 본문일 때만 kind·title·center·items(2~6개)를 쓴다. rel의 연결 중심이 없거나 내용이 불명확하면 null.
 JSON 객체 하나만 반환한다. 인사말, 설명, Markdown 코드 펜스는 붙이지 않는다.
-blocks는 빠짐없이 반환하고 각 블록의 id, role, audience는 항상 적는다. 그 외 값이 빈 배열, null, false이면 해당 필드를 생략한다.
+blocks는 빠짐없이 반환하고 각 블록의 id, role, audience는 항상 적는다. preserve=true인 블록에서는 protect=true도 적는다.
+나머지 필드는 유효한 값이 있을 때만 적는다. 그림의 items에는 문자열만 넣는다.
 최상위 terms에는 이번 쪽에서 새로 고른 교과 개념어의 정의만 담는다. 새 정의가 없으면 빈 객체를 반환한다.
-{"blocks":[{"id":"블록 id","role":"body","audience":"student","protect":false,"joins":[],"terms":["핵심어"],"hard":[{"from":"원문 표현","easy":"쉬운 표현","note":"짧은 설명","tier":"2-3"}],"easy_low":null,"easy_mid":null,"dense":false,"visual":null}],
+{"blocks":[{"id":"블록 id","role":"body","audience":"student","terms":["핵심어"],"hard":[{"from":"원문 표현","easy":"쉬운 표현","note":"짧은 설명","tier":"2-3"}]}],
  "terms":{"핵심어":{"easy":"쉬운 뜻","translation":"모국어 대역"}}}
 """
-
-
-class HardExpression(Input):
-    source: str = Field(alias="from", max_length=80)
-    easy: str = Field(default="", max_length=200)
-    note: str = Field(default="", max_length=80)
-    tier: Tier
-
-
-class AnalyzedBlock(Input):
-    id: str
-    role: Literal["title", "heading", "body", "caption", "question", "other"]
-    audience: Literal["student", "teacher"]
-    protect: bool = False
-    joins: list[bool] = Field(default_factory=list, max_length=MAX_PAGE_CHARS)
-    terms: list[str] = Field(default_factory=list, max_length=3)
-    hard: list[HardExpression] = Field(default_factory=list, max_length=10)
-    easy_low: str | None = Field(default=None, max_length=10000)
-    easy_mid: str | None = Field(default=None, max_length=10000)
-    dense: bool = False
-    visual: StudyVisual | None = None
-
-
-class TermDefinition(Input):
-    easy: str = Field(min_length=1, max_length=300, pattern=r"\S")
-    translation: str = Field(default="", max_length=300)
-    tier: Tier = "3"
-    category: Literal["curriculum_adapted", "general_knowledge"] = "curriculum_adapted"
-
-
-class PageAnalysis(Input):
-    blocks: list[AnalyzedBlock] = Field(max_length=MAX_PAGE_BLOCKS)
-    terms: dict[str, TermDefinition] = Field(default_factory=dict, max_length=10)
 
 
 @dataclass(frozen=True)
@@ -232,6 +195,7 @@ def convert_pdf(
     resolved: list[ResolvedBlock] = []
     term_definitions: dict[str, TermDefinition] = {}
     omitted_pages = []
+    limited_support_pages = []
     for page in pages:
         if not _readable(page.blocks):
             omitted_pages.append(page.number)
@@ -246,24 +210,12 @@ def convert_pdf(
             "knownTerms": list(term_definitions),
             "blocks": [{"id": block.id, "text": block.text, "preserve": block.preserve} for block in page.blocks],
         }
-        try:
-            response = call(CONVERT_INSTRUCTIONS, request)
-        except APIError as error:
-            raise APIError(error.status, error.code, error.message, {"page": page.number}) from error
-
-        try:
-            analysis = PageAnalysis.model_validate(response)
-        except ValidationError:
-            code = "SOLAR_OUTPUT_SCHEMA"
-            fail(502, code, ERROR_MESSAGES[code], {"page": page.number})
-        analysis_by_id = {row.id: row for row in analysis.blocks}
-        expected_ids = {block.id for block in page.blocks}
-        if analysis_by_id.keys() != expected_ids or len(analysis.blocks) != len(page.blocks):
-            code = "SOLAR_OUTPUT_BLOCKS"
-            fail(502, code, ERROR_MESSAGES[code], {"page": page.number})
+        analysis = analyze_page(call, CONVERT_INSTRUCTIONS, request, page)
+        if analysis.limited_support:
+            limited_support_pages.append(page.number)
 
         for block in page.blocks:
-            row = analysis_by_id[block.id]
+            row = analysis.blocks[block.id]
             preserve = block.preserve or row.protect
             text = _joined_text(block.text, [] if preserve else row.joins)
             result = ResolvedBlock(page.number, block, row, text)
@@ -301,4 +253,5 @@ def convert_pdf(
     return Content(
         paragraphs=paragraphs, translations=translations,
         omittedPages=omitted_pages, hiddenBlockIds=hidden, studyNotes=study_notes,
+        limitedSupportPages=limited_support_pages,
     )

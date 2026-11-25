@@ -40,7 +40,8 @@ def test_pdf_conversion_review_and_publishing(database, monkeypatch, tmp_path):
         return {
             "blocks": [
                 {"id": "p1b1", "role": "body", "audience": "student",
-                 "hard": [{"from": "검증", "easy": "확인", "note": "살펴보는 일", "tier": "2-3"}]},
+                 "hard": [{"from": "검증", "easy": "확인", "note": "살펴보는 일", "tier": "2-3"}],
+                 "visual": {"kind": "list", "items": [1, 2]}},
                 {"id": "p1b2", "role": "body", "audience": "teacher"},
             ],
             "terms": {"교과": {"easy": "학교에서 배우는 과목", "translation": "学科"}},
@@ -115,6 +116,8 @@ def test_pdf_conversion_review_and_publishing(database, monkeypatch, tmp_path):
         original = teacher.get(path).raise_for_status()
         draft = original.json()
         assert draft["status"] == "draft" and draft["content"]["hiddenBlockIds"] == ["p1b2"]
+        assert draft["content"]["limitedSupportPages"] == [1]
+        assert draft["content"]["paragraphs"][0]["text"] == "교과 자료를 확인한다."
         assert all("정답" not in p["text"] for p in draft["content"]["paragraphs"])
 
         with TestClient(create_app(), base_url="http://testserver/api/v1") if database else TestClient(
@@ -139,6 +142,7 @@ def test_pdf_conversion_review_and_publishing(database, monkeypatch, tmp_path):
         student.post("/auth/login", json=student_login).raise_for_status()
         visible = student.get(path).raise_for_status().json()
         assert visible["content"]["paragraphs"][0]["text"] == "교과 자료를 확인한다."
+        assert visible["content"]["limitedSupportPages"] == [1]
         assert visible["originalContent"] is None
 
 
@@ -196,7 +200,10 @@ def test_solar_distinguishes_completion_failures(monkeypatch, reason, content, c
     (["p2b1", "p2b2"], "unknown", "SOLAR_OUTPUT_SCHEMA"),
 ])
 def test_solar_pdf_keeps_source_order_and_validates_classification(row_ids, audience, expected_code):
+    calls = []
+
     def analyze(_instructions, _request):
+        calls.append(_request["page"])
         return {"blocks": [{"id": row_id, "role": "body", "audience": audience} for row_id in row_ids]}
 
     page = PdfPage(number=2, blocks=[
@@ -207,8 +214,64 @@ def test_solar_pdf_keeps_source_order_and_validates_classification(row_ids, audi
     if expected_code is None:
         result = convert_pdf(analyze, source, learner, [page])
         assert [row.id for row in result.paragraphs] == ["p2b1", "p2b2"]
+        assert calls == [2]
     else:
         with pytest.raises(APIError) as error:
             convert_pdf(analyze, source, learner, [page])
         assert error.value.code == expected_code
         assert error.value.details == {"page": 2}
+        assert calls == [2, 2]
+
+
+def test_pdf_keeps_usable_annotations_when_one_page_has_bad_optional_fields():
+    page = PdfPage(number=2, blocks=[
+        PdfBlock(id="p2b1", text="자음자와 모양을 본떠 나타냅니다."),
+        PdfBlock(id="p2b2", text="ㄱ ㅋ ㄲ", preserve=True),
+        PdfBlock(id="p2b3", text="교사용 정답: 글자의 모양"),
+    ])
+
+    def analyze(_instructions, request):
+        assert request["page"] == 2 and len(request["blocks"]) == 3
+        return {
+            "blocks": [
+                {"id": "p2b1", "role": "body", "audience": "student", "joins": None,
+                 "terms": ["자음자", "모양"],
+                 "hard": [{"from": "본떠", "easy": "보고 따라", "note": None, "tier": 3},
+                          {"from": "나타냅니다", "easy": ["보입니다"], "tier": "3"}],
+                 "visual": {"kind": "list", "items": ["ㄱ", "ㄴ", "ㅁ", "ㅅ", "ㅇ", "ㅋ", "ㄲ"]}},
+                {"id": "p2b2", "role": "other", "audience": "student", "terms": None},
+                {"id": "p2b3", "role": "body", "audience": "teacher", "hard": None},
+            ],
+            "terms": {"자음자": {"easy": "자음을 쓰는 글자", "translation": None}, "모양": {"easy": False}},
+        }
+
+    result = convert_pdf(analyze, {"subject": "korean", "unit": "한글"},
+                         {"level": "beginner", "nativeLanguage": "zh"}, [page])
+    assert [(row.id, row.text) for row in result.paragraphs] == [
+        ("p2b1", "자음자와 모양을 보고 따라 나타냅니다."), ("p2b2", "ㄱ ㅋ ㄲ"),
+    ]
+    assert result.hiddenBlockIds == ["p2b3"]
+    assert result.limitedSupportPages == [2] and result.omittedPages == []
+    assert result.translations == [{"term": "자음자", "meaning": "자음을 쓰는 글자", "translation": "", "language": "zh"}]
+    assert not result.studyNotes
+
+
+def test_pdf_recovers_missing_classification_without_revealing_known_teacher_content():
+    page = PdfPage(number=2, blocks=[
+        PdfBlock(id="p2b1", text="학생이 읽을 본문입니다."),
+        PdfBlock(id="p2b2", text="지도 메모 내용입니다."),
+    ])
+    requests = []
+
+    def analyze(instructions, data):
+        requests.append(data)
+        if len(requests) == 1:
+            return {"blocks": [{"id": "p2b2", "role": "body", "audience": " 교사용 "}]}
+        assert "분류" in instructions and "learner" not in data
+        return {"blocks": [{"id": block["id"], "role": "body", "audience": "student"} for block in data["blocks"]]}
+
+    result = convert_pdf(analyze, {"subject": "korean", "unit": "한글"},
+                         {"level": "intermediate", "nativeLanguage": "vi"}, [page])
+    assert len(requests) == 2
+    assert result.limitedSupportPages == [2] and result.hiddenBlockIds == ["p2b2"]
+    assert [row.id for row in result.paragraphs] == ["p2b1"]

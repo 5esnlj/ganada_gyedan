@@ -1,6 +1,6 @@
 """Wire DTOs for private files, source materials and student editions."""
 
-from typing import Literal
+from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
@@ -75,6 +75,7 @@ class Content(Input):
     paragraphs: list[Paragraph] = Field(min_length=1, max_length=500)
     translations: list[dict[str, str]] = Field(default_factory=list)
     omittedPages: list[int] = Field(default_factory=list, max_length=10)
+    limitedSupportPages: list[Annotated[int, Field(ge=1, le=100)]] = Field(default_factory=list, max_length=10)
     hiddenBlockIds: list[str] = Field(default_factory=list, max_length=500)
     studyNotes: list[StudyNote] = Field(default_factory=list, max_length=500)
 

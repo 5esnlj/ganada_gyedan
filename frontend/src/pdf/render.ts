@@ -1,10 +1,11 @@
 import type { PhraseChange } from '../api/wire';
 import { renderHelpPages } from './appendix';
 import { loadPreviewFont, previewFont } from './fonts';
-import { placePhrases, type PhrasePlacement } from './phrases';
+import { drawPageGlosses, nativeGlosses, type GlossLine } from './glosses';
+import { fitPhraseSubset, placePhrases, type PhrasePlacement } from './phrases';
 import { imageRaster, pixelRectangle, releaseRaster, textRectangle, wrapLine } from './raster';
 import type { Raster, Rectangle } from './raster';
-import type { Box, ConvertedPdfContent, PdfBlock, PdfHelpContent, PdfPage, PdfPreview } from './types';
+import type { Box, ConvertedPdfContent, PdfBlock, PdfHelpContent, PdfPage, PdfPreview, PdfProtectedRegion } from './types';
 
 interface Overlay {
   font: string;
@@ -25,13 +26,16 @@ function fitText(
   const top = block.y - (block.lineHeight - 1) * block.fontSize / 2;
   const bottom = Math.min(block.container?.y1 ?? page.height,
     top + block.lineCount * block.lineHeight * block.fontSize + block.room);
-  const fullWidth = Math.min((block.container?.x1 ?? page.width) - block.x,
-    block.lineCount === 1 ? block.width * 1.03 + block.fontSize * 0.5 : block.width + 0.5);
-  const steps = [[1, 1], [0.95, 1], [0.9, 1]];
-  if (!block.inner) steps.push([0.9, 0.95], [0.9, 0.9]);
-  for (const [fontScale, lineScale] of steps) {
+  const availableWidth = (block.container?.x1 ?? page.width) - block.x;
+  const originalWidth = block.lineCount === 1 ? block.width * 1.03 + block.fontSize * 0.5 : block.width + 0.5;
+  const steps = [[1, 1, 0], [1, 1, 1], [0.95, 1, 0], [0.95, 1, 1], [0.9, 1, 0], [0.9, 1, 1]];
+  if (!block.inner) steps.push([0.9, 0.95, 1], [0.9, 0.9, 1], [0.85, 0.93, 1]);
+  for (const [fontScale, lineScale, extraWidth] of steps) {
     if (lineScale < 1 && block.lineHeight * lineScale < 1.2 * fontScale) continue;
     const size = block.fontSize * fontScale;
+    if (fontScale < 0.9 && size < 8) continue;
+    // Extra width is still checked against the cell and nearby text or graphics.
+    const fullWidth = Math.min(availableWidth, originalWidth + extraWidth * block.fontSize * 1.4);
     const pitch = block.lineHeight * block.fontSize * lineScale;
     const font = chooseFont(block, size);
     const firstBaseline = block.y + block.fontSize * 0.88;
@@ -67,25 +71,17 @@ function fitParagraph(
   context: CanvasRenderingContext2D, page: PdfPage, block: PdfBlock, text: string, changes: readonly PhraseChange[],
   allows: (overlay: Overlay, placements: readonly PhrasePlacement[]) => boolean,
 ) {
-  const deferred = new Set<PhraseChange>();
-  let plan = placePhrases(text, changes, deferred);
-  const currentOverlay = () => fitText(context, page, block, plan.text, candidate => allows(candidate, plan.placements));
-  let overlay = currentOverlay();
-  if (!overlay && changes.length) {
-    context.font = chooseFont(block, block.fontSize);
-    const revertOrder = changes.map((change) => ({
-      change,
-      growth: context.measureText(change.replacement).width - context.measureText(change.original).width,
-    })).sort((a, b) => b.growth - a.growth);
-    for (const { change } of revertOrder) {
-      deferred.add(change);
-      plan = placePhrases(text, changes, deferred);
-      if (!plan.placements.length) break;
-      overlay = currentOverlay();
-      if (overlay) break;
-    }
-  }
-  return overlay ? { overlay, placements: plan.placements, deferred } : null;
+  context.font = chooseFont(block, block.fontSize);
+  const widestFirst = changes.map(change => ({
+    change,
+    growth: context.measureText(change.replacement).width - context.measureText(change.original).width,
+  })).sort((a, b) => b.growth - a.growth).map(({ change }) => change);
+  const fitted = fitPhraseSubset(widestFirst, deferred => {
+    const plan = placePhrases(text, changes, deferred);
+    const overlay = fitText(context, page, block, plan.text, candidate => allows(candidate, plan.placements));
+    return overlay ? { overlay, placements: plan.placements } : null;
+  });
+  return fitted ? { ...fitted.value, deferred: fitted.deferred } : null;
 }
 
 function drawOverlay(context: CanvasRenderingContext2D, block: PdfBlock, overlay: Overlay, placements: PhrasePlacement[]) {
@@ -130,13 +126,26 @@ function runBounds(page: PdfPage, raster: Raster, block: PdfBlock, padding: numb
 
 function pageObstacles(page: PdfPage, raster: Raster) {
   const { width, height } = raster.canvas;
-  const graphics = (page.protectedRegions ?? page.images).flatMap(region => {
+  const images: Rectangle[] = [];
+  const regions: readonly PdfProtectedRegion[] = page.protectedRegions ?? page.images.map(box => ({ ...box, kind: 'image' }));
+  const graphics = regions.flatMap(region => {
     const bounds = pixelRectangle(region, page.scale, width, height);
+    if (bounds && region.kind === 'image' && !region.blockId) images.push(bounds);
     return bounds ? [bounds] : [];
   });
   const text = page.blocks.flatMap(block => runBounds(page, raster, block, 0.02)
     .flatMap(bounds => bounds ? [{ bounds, owner: block.id }] : []));
-  return { graphics, text };
+  return { graphics, text, images };
+}
+
+function imageOverlapIsWhite(box: Rectangle, image: Rectangle, background: Uint8ClampedArray, width: number) {
+  for (let y = Math.max(box.y0, image.y0); y <= Math.min(box.y1, image.y1); y++) {
+    for (let x = Math.max(box.x0, image.x0); x <= Math.min(box.x1, image.x1); x++) {
+      const i = (y * width + x) * 4;
+      if (background[i] !== 255 || background[i + 1] !== 255 || background[i + 2] !== 255 || background[i + 3] !== 255) return false;
+    }
+  }
+  return true;
 }
 
 function overlayBounds(context: CanvasRenderingContext2D, overlay: Overlay, placements: readonly PhrasePlacement[]) {
@@ -159,6 +168,7 @@ function overlayBounds(context: CanvasRenderingContext2D, overlay: Overlay, plac
 function overlayFits(
   page: PdfPage, raster: Raster, block: PdfBlock, obstacles: Rectangle[],
   overlay: Overlay, placements: readonly PhrasePlacement[],
+  blankImageMargins: readonly Rectangle[], backgroundPixels: Uint8ClampedArray,
 ) {
   const { width, height } = raster.canvas;
   const region: Box = block.container ?? { x: 0, y: 0, x1: page.width, y1: page.height };
@@ -167,7 +177,8 @@ function overlayFits(
     if (box.x - slack < region.x || box.y - slack < region.y ||
         box.x1 + slack > region.x1 || box.y1 + slack > region.y1) return false;
     const bounds = pixelRectangle(box, page.scale, width, height, 1);
-    return bounds && !obstacles.some(other => overlaps(bounds, other));
+    return bounds && !obstacles.some(other => overlaps(bounds, other)) &&
+      blankImageMargins.every(image => imageOverlapIsWhite(bounds, image, backgroundPixels, width));
   });
 }
 
@@ -184,25 +195,49 @@ function replaceRuns(context: CanvasRenderingContext2D, background: Raster, patc
 function safeRunPatches(
   patches: readonly (Rectangle | null)[], obstacles: readonly Rectangle[],
   original: Uint8ClampedArray, background: Uint8ClampedArray, width: number,
+  inkOnly = false,
 ): readonly Rectangle[] | null {
   if (!patches.length || !patches.every((patch): patch is Rectangle => patch !== null)) return null;
-  if (patches.some(patch => obstacles.some(other => overlaps(patch, other)))) return null;
 
+  const safe = [];
   for (const patch of patches) {
-    let ink = false;
+    const touching = obstacles.filter(other => overlaps(patch, other));
+    if (touching.length && !inkOnly) return null;
+    const ink = { x0: Infinity, y0: Infinity, x1: -Infinity, y1: -Infinity };
     for (let y = patch.y0; y <= patch.y1; y++) {
       for (let x = patch.x0; x <= patch.x1; x++) {
         const i = (y * width + x) * 4;
         if (original[i] === background[i] && original[i + 1] === background[i + 1] &&
             original[i + 2] === background[i + 2] && original[i + 3] === background[i + 3]) continue;
-        ink = true;
+        if (touching.some(other => contains(other, x, y))) return null;
         const atEdge = x === patch.x0 || x === patch.x1 || y === patch.y0 || y === patch.y1;
         if (atEdge && !patches.some(other => other !== patch && contains(other, x, y))) return null;
+        ink.x0 = Math.min(ink.x0, x);
+        ink.y0 = Math.min(ink.y0, y);
+        ink.x1 = Math.max(ink.x1, x);
+        ink.y1 = Math.max(ink.y1, y);
       }
     }
-    if (!ink) return null;
+    if (ink.x0 !== Infinity) safe.push(inkOnly ? ink : patch);
+    else if (!inkOnly) return null;
   }
-  return patches;
+  return safe.length ? safe : null;
+}
+
+function studentRunPatches(
+  page: PdfPage, raster: Raster, block: PdfBlock, barriers: readonly Rectangle[],
+  drawn: readonly Rectangle[], pixels: Uint8ClampedArray, backgroundPixels: Uint8ClampedArray,
+  blankImageMargins: readonly Rectangle[],
+) {
+  // Retry a clipped glyph with more room. Empty padding may touch an obstacle; its ink cannot.
+  for (const margin of [0.15, 0.22, 0.30]) {
+    const runs = runBounds(page, raster, block, margin);
+    const width = raster.canvas.width;
+    const images = blankImageMargins.filter(image => runs.some(run => run && !imageOverlapIsWhite(run, image, backgroundPixels, width)));
+    const patches = safeRunPatches(runs, barriers.concat(images), pixels, backgroundPixels, width, true);
+    if (patches && !patches.some(patch => drawn.some(overlay => overlaps(patch, overlay)))) return patches;
+  }
+  return null;
 }
 
 function redact(
@@ -246,8 +281,9 @@ function withoutLegacyBadge(block: PdfBlock, text: string, phrases: readonly Phr
 
 export async function renderConvertedPages(pages: readonly PdfPage[], content: ConvertedPdfContent): Promise<PdfPreview> {
   await loadPreviewFont();
-  const output: PdfPreview = { pages: [], notices: [], unplacedBlockIds: [], phrases: [] };
+  const output: PdfPreview = { pages: [], notices: [], unplacedBlockIds: [], phrases: [], glosses: [] };
   const paragraphs = new Map(content.paragraphs.map(paragraph => [paragraph.id, paragraph]));
+  const translations = nativeGlosses(content.translations);
   const omitted = new Set(content.omittedPages);
   const limitedSupport = new Set(content.limitedSupportPages);
   const hidden = new Set(content.hiddenBlockIds);
@@ -273,7 +309,12 @@ export async function renderConvertedPages(pages: readonly PdfPage[], content: C
       return text.trim() && text.trim() !== sourceText ? [{ block, text, phrases }] : [];
     });
     const privateContent = page.blocks.some(block => hidden.has(block.id));
-    if (!changes.length && !privateContent) {
+    const glossaryBlocks = !translations.length || omittedPage ? [] : page.blocks.filter(block => {
+      const paragraph = paragraphs.get(block.id);
+      return paragraph?.page === page.number && canEditPdfBlock(page, block, content)
+        && translations.some(({ term }) => paragraph.text.includes(term));
+    });
+    if (!changes.length && !privateContent && !glossaryBlocks.length) {
       output.pages.push(original);
       continue;
     }
@@ -283,8 +324,8 @@ export async function renderConvertedPages(pages: readonly PdfPage[], content: C
     try {
       if (page.backgroundUrl) {
         background = await imageRaster(page.backgroundUrl).catch(() => undefined);
-        raster = background && await imageRaster(page.imageUrl);
       }
+      if (background || glossaryBlocks.length) raster = await imageRaster(page.imageUrl);
       if (background && raster && (background.canvas.width !== raster.canvas.width ||
           background.canvas.height !== raster.canvas.height)) {
         releaseRaster(background);
@@ -300,6 +341,7 @@ export async function renderConvertedPages(pages: readonly PdfPage[], content: C
       }
 
       const drawn: Rectangle[] = [];
+      const overlays = new Map<string, Overlay>();
       let committed = false;
       let fallbacks = 0;
       let deferredCount = 0;
@@ -307,13 +349,19 @@ export async function renderConvertedPages(pages: readonly PdfPage[], content: C
         let fitted = null;
         if (raster && background && pixels && backgroundPixels && obstacles && canEditPdfBlock(page, block, content)) {
           const currentRaster = raster;
-          const barriers = obstacles.graphics.concat(
+          const originalRuns = runBounds(page, raster, block, 0);
+          // Some image bounds include a blank margin where the PDF already draws this text.
+          // Only those margins can accept another student overlay, after checking its actual pixels below.
+          const blankImageMargins = obstacles.images.filter(image =>
+            originalRuns.some(run => run && overlaps(run, image)) && originalRuns.every(run =>
+              run && imageOverlapIsWhite(run, image, backgroundPixels, currentRaster.canvas.width)));
+          const barriers = obstacles.graphics.filter(region => !blankImageMargins.includes(region)).concat(
             obstacles.text.filter(other => other.owner !== block.id).map(other => other.bounds), drawn);
-          const patches = safeRunPatches(runBounds(page, raster, block, 0.15), barriers,
-            pixels, backgroundPixels, raster.canvas.width);
+          const patches = studentRunPatches(page, raster, block, barriers, drawn, pixels, backgroundPixels, blankImageMargins);
           if (patches) {
             fitted = fitParagraph(raster.context, page, block, text, phrases,
-              (overlay, placements) => overlayFits(page, currentRaster, block, barriers, overlay, placements));
+              (overlay, placements) => overlayFits(page, currentRaster, block, barriers, overlay, placements,
+                blankImageMargins, backgroundPixels));
             if (fitted) {
               replaceRuns(raster.context, background, patches);
               for (const box of overlayBounds(raster.context, fitted.overlay, fitted.placements)) {
@@ -325,6 +373,7 @@ export async function renderConvertedPages(pages: readonly PdfPage[], content: C
               raster.context.textBaseline = 'alphabetic';
               drawOverlay(raster.context, block, fitted.overlay, fitted.placements);
               raster.context.restore();
+              overlays.set(block.id, fitted.overlay);
               committed = true;
             }
           }
@@ -345,7 +394,23 @@ export async function renderConvertedPages(pages: readonly PdfPage[], content: C
       if (deferredCount) {
         output.notices.push(`${page.number}쪽 표현 ${deferredCount}개는 원문을 남기고 PDF 도움말에 쉬운 표현을 담았습니다.`);
       }
-      output.pages.push((committed || privateContent) && raster
+      let glossaryCount = 0;
+      if (raster && obstacles && glossaryBlocks.length) {
+        const lines = glossaryBlocks.flatMap<GlossLine>(block => {
+          const overlay = overlays.get(block.id);
+          if (overlay) return overlay.lines.map(line => ({
+            ...line, size: overlay.size, font: overlay.font, container: block.container,
+          }));
+          return (block.sourceLines ?? []).map(({ text, rect: [x, y, width, size] }) => ({
+            text, x, width, size, baseline: y + size * 0.88, font: chooseFont(block, size),
+            inkTop: y - size * 0.08, inkBottom: y + size * 1.10, container: block.container,
+          }));
+        });
+        const glosses = drawPageGlosses(raster, page, lines, translations, obstacles.graphics);
+        glossaryCount = glosses.length;
+        output.glosses.push(...glosses);
+      }
+      output.pages.push((committed || privateContent || glossaryCount) && raster
         ? { ...original, imageUrl: raster.canvas.toDataURL('image/png') } : original);
     } finally {
       if (background) releaseRaster(background);

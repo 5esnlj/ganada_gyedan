@@ -33,9 +33,16 @@ CLASSIFICATION_INSTRUCTIONS = """PDF 학습 자료의 문단을 분류한다.
 본문·학생 문항과 선택지·쪽 번호·그림 및 표 제목·그림 속 라벨의 audience는 student로 한다.
 교사용임이 분명한 주석, 정답표, 예시 답안, 해설, 채점 기준, 지도 방안만 teacher로 한다.
 role은 title, heading, body, caption, question, other 중 하나다.
-preserve가 true이거나 문학 작품 인용, 문제의 보기나 선택지, 수식, 표 수치이면 protect는 true다.
-다음 네 필드만 사용한다. 코드 펜스나 설명 없이 닫는 괄호까지 JSON 객체 하나만 출력한다.
-{"blocks":[{"id":"원래 id","role":"body","audience":"student","protect":false}]}"""
+preserve가 true이거나 문학 작품 인용, 문제의 보기나 선택지, 수식, 표 수치 자체인 문단은 protect가 true다.
+일반 서술문에 수치·수식이 섞여 있으면 그 표기를 유지하고 주변 어구만 교체 후보로 고른다.
+분류를 먼저 완료한다. 보호하지 않는 학생용 문단에서 특별히 중요한 용어·표현이 있으면 terms(최대 2개)와
+rewriteTargets(최대 2개)를 적고, 나머지 문단에서는 두 필드를 생략한다.
+rewriteTargets.from에는 원문 어구를 정확히 복사한다. 반복 어구는 왼쪽부터 occurrence를 적는다.
+learner.subjectCriterion의 textTreatment가 simplify 또는 explain일 때만 basis=subject를 쓴다.
+의사소통이 needs_improvement면 일상 표현과 활동 지시는 basis=communication으로 고른다.
+코드 펜스나 설명 없이 닫는 괄호까지 JSON 객체 하나만 출력한다.
+{"blocks":[{"id":"원래 id","role":"body","audience":"student","protect":false,
+"terms":["원래 용어"],"rewriteTargets":[{"from":"원래 표현","basis":"subject"}]}]}"""
 
 AUDIENCE_CONFIRMATION_INSTRUCTIONS = """교과서 PDF에서 실제로 교사에게만 제공하는 내용을 확인한다.
 blocks의 원문과 주변 문단(context)을 분석해서 같은 id를 빠짐없이 한 번씩 반환한다.
@@ -137,6 +144,7 @@ class _AudienceConfirmation(BaseModel):
 class RewriteTarget(BaseModel):
     source: str = Field(alias="from", min_length=2, max_length=200)
     basis: Basis
+    occurrence: Annotated[int, Field(strict=True, ge=1, le=500)] | None = None
 
 
 class TextRewrite(BaseModel):
@@ -312,11 +320,11 @@ def _parse_page(response: dict, page: PdfPage, previous: dict | None = None) -> 
         # Keep the text in place when either its role or its protection is ambiguous.
         protected = role is None or protect_value is not False
         if previous is not None:
-            # The retry only classifies. Reuse existing annotations for uniquely identified student blocks.
-            raw = prior_rows.get(identity.id, {})
-            protected = protected or raw.get("protect", False) is not False
-            if _normalize_audience(raw.get("audience")) != "student" or _normalized(raw.get("role")) != role:
-                raw = {}
+            # Prefer already decoded annotations when the compact retry agrees.
+            prior_row = prior_rows.get(identity.id, {})
+            protected = protected or prior_row.get("protect", False) is not False
+            if _normalize_audience(prior_row.get("audience")) == "student" and _normalized(prior_row.get("role")) == role:
+                raw = {**raw, **prior_row}
         if role is None or protect_value is None:
             reader.limited_support = True
         can_join = audience == "student" and not (originals[identity.id].preserve or protected)
@@ -421,7 +429,8 @@ def analyze_page(call: Callable[[str, dict], dict], instructions: str, request: 
             raise
         logger.info("Retrying PDF classification (page=%s, code=%s)", page.number, error.code)
         # A compact classification can recover a page even when its first answer could not be decoded.
-        retry_input = {key: request[key] for key in ("page", "subject", "unit", "blocks")}
+        retry_input = {key: request[key] for key in ("page", "subject", "unit", "blocks", "learner")}
+        retry_input["stage"] = "classification-retry"
         retry = complete(CLASSIFICATION_INSTRUCTIONS, retry_input)
         analysis = _parse_page(retry, page, response)
     return _confirm_teacher_candidates(analysis, page, request, complete)
@@ -445,6 +454,14 @@ def adapt_page(call: Callable[[str, dict], dict], instructions: str, request: di
         raw = unique.get(block_id, {})
         allowed = {item["from"] for item in plan["rewriteTargets"]}
         rewrites = reader.items(raw.get("rewrites"), TextRewrite.model_validate, 10)
+        by_text: dict[str, list[str]] = {}
+        for source in allowed:
+            by_text.setdefault(compact_source(source), []).append(source)
+        for edit in rewrites:
+            if edit.source not in allowed:
+                matches = by_text.get(compact_source(edit.source), [])
+                if len(matches) == 1:
+                    edit.source = matches[0]
         counts = Counter(edit.source for edit in rewrites)
         rewritten = [edit for edit in rewrites if edit.source in allowed and counts[edit.source] == 1]
         if {edit.source for edit in rewritten} != allowed or len(rewritten) != len(rewrites):
@@ -457,3 +474,8 @@ def adapt_page(call: Callable[[str, dict], dict], instructions: str, request: di
     referenced = {term for plan in planned.values() for term in plan["terms"]}
     terms = reader.glossary(response.get("terms") if isinstance(response, dict) else None, referenced)
     return PageAdaptation(adapted, terms, reader.limited_support or terms.keys() != referenced)
+
+
+def compact_source(text: str) -> str:
+    """Keep the exact characters and remove extraction-dependent whitespace."""
+    return "".join(text.replace("‸", "").split())

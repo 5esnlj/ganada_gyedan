@@ -34,6 +34,7 @@ export interface PdfBlock {
   color: string;
   runs: TextRect[];
   lines: TextRect[];
+  sourceLines?: { text: string; rect: TextRect }[];
   room: number;
   inner: boolean;
   wrap?: { x: number; y: number; y1: number };
@@ -69,6 +70,7 @@ export interface ConversionPage {
 
 export interface ConvertedPdfContent {
   paragraphs: readonly MaterialParagraph[];
+  translations?: readonly Record<string, string>[];
   omittedPages?: readonly number[];
   limitedSupportPages?: readonly number[];
   hiddenBlockIds?: readonly string[];
@@ -86,6 +88,13 @@ export interface PdfPreview {
   notices: string[];
   unplacedBlockIds: string[];
   phrases: PdfPhraseResult[];
+  glosses: PdfGlossResult[];
+}
+
+export interface PdfGlossResult {
+  page: number;
+  term: string;
+  translation: string;
 }
 
 export interface PdfSource {

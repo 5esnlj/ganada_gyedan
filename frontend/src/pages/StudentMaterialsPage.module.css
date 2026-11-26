@@ -22,6 +22,20 @@
 .download { color: var(--color-text); text-decoration: none; }
 .download:hover { border-color: var(--color-primary); }
 
+.pdfReader {
+  display: grid;
+  justify-items: center;
+  gap: var(--space-m);
+  min-width: 0;
+  padding: clamp(var(--space-s), 3vw, var(--space-l));
+  border: 1px solid var(--color-line);
+  border-radius: var(--radius-main);
+  background: var(--color-surface);
+}
+
+.pdfPager { display: flex; align-items: center; gap: var(--space-s); }
+.pdfPage { display: block; width: 100%; max-width: 56rem; box-shadow: var(--shadow-page); }
+
 .reader {
   display: grid;
   gap: var(--space-m);

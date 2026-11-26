@@ -7,6 +7,8 @@ from app.core.state import MemoryStore, Record, timestamp
 from .dto import (
     DiagnosticAnswer,
     DiagnosticAnswerOut,
+    DiagnosticListen,
+    DiagnosticListenOut,
     DiagnosticNext,
     DiagnosticQuestion,
     DiagnosticResults,
@@ -20,6 +22,9 @@ from .forms import DiagnosticForm, DiagnosticItem, FormProvider
 from .grading import grade
 
 
+LISTENING_PLAY_LIMIT = 2
+
+
 def new_diagnostic(form: DiagnosticForm, class_id: str) -> Record:
     return {
         "form": form,
@@ -28,6 +33,7 @@ def new_diagnostic(form: DiagnosticForm, class_id: str) -> Record:
         "startedAt": timestamp(),
         "completedAt": None,
         "answers": {},
+        "listeningPlays": {},
         "results": None,
     }
 
@@ -134,8 +140,30 @@ def next_question(diagnostic: Record) -> DiagnosticNext:
                 sectionNumber=sum(candidate.sequence <= item.display.sequence for candidate in section),
                 sectionTotal=len(section),
             )
+        if item.display.skill == "listening" and item.display.audioUrl:
+            plays = (diagnostic["listeningPlays"] or {}).get(item.display.id, [])
+            display["listeningPlaysRemaining"] = LISTENING_PLAY_LIMIT - len(plays)
         question = DiagnosticQuestion(**display, isSynthetic=form.is_synthetic)
     return DiagnosticNext(progress=progress(diagnostic), question=question)
+
+
+def register_listening_play(diagnostic: Record, body: DiagnosticListen) -> DiagnosticListenOut:
+    item = pending_question(diagnostic["form"], diagnostic["answers"])
+    if item is None or body.questionId != item.display.id:
+        fail(409, "QUESTION_OUT_OF_ORDER", "현재 듣기 문항만 재생할 수 있습니다.")
+    if item.display.skill != "listening" or not item.display.audioUrl:
+        fail(422, "DIAGNOSTIC_AUDIO_UNAVAILABLE", "이 문항에는 재생할 음원이 없습니다.")
+
+    stored = diagnostic["listeningPlays"]
+    if stored is None:
+        fail(503, "DATABASE_MIGRATION_REQUIRED", "듣기 횟수를 저장하려면 MariaDB 업데이트가 필요합니다.")
+    plays = stored.get(body.questionId, [])
+    if body.playId not in plays:
+        if len(plays) >= LISTENING_PLAY_LIMIT:
+            fail(409, "DIAGNOSTIC_LISTENING_LIMIT", "이 문항의 듣기 횟수를 모두 사용했습니다.")
+        plays = [*plays, body.playId]
+        diagnostic["listeningPlays"] = {**stored, body.questionId: plays}
+    return DiagnosticListenOut(remainingPlays=LISTENING_PLAY_LIMIT - len(plays))
 
 
 def submit_answer(diagnostic: Record, answer: DiagnosticAnswer) -> DiagnosticAnswerOut:

@@ -34,6 +34,15 @@
   color: var(--color-text-sub);
 }
 
+.uploadedFile {
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs);
+  overflow-wrap: anywhere;
+}
+
+.uploadedFile svg { flex-shrink: 0; color: var(--color-primary); }
+
 .cards {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(min(100%, 13rem), 1fr));

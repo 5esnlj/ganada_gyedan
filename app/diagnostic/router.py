@@ -12,6 +12,8 @@ from app.mariadb.store import MariaDBStore
 from .dto import (
     DiagnosticAnswer,
     DiagnosticAnswerOut,
+    DiagnosticListen,
+    DiagnosticListenOut,
     DiagnosticNext,
     DiagnosticResults,
     DiagnosticStart,
@@ -28,6 +30,7 @@ from .service import (
     diagnostic_state,
     next_question,
     progress,
+    register_listening_play,
     start,
     submit_answer,
 )
@@ -79,6 +82,13 @@ def diagnostic_start(
 @router.get("/diagnostic/next-question", tags=["진단"], response_model_exclude_unset=True)
 def diagnostic_next(request: Request, state: Store) -> DiagnosticNext:
     return next_question(active_diagnostic(state, auth(request, "student")))
+
+
+@router.post("/diagnostic/listening-plays", tags=["진단"])
+def diagnostic_listen(body: DiagnosticListen, request: Request, state: Store) -> DiagnosticListenOut:
+    user = auth(request, "student")
+    with _edit(state, user["id"]):
+        return register_listening_play(active_diagnostic(state, user), body)
 
 
 @router.post("/diagnostic/answers", tags=["진단"], response_model_exclude_unset=True)

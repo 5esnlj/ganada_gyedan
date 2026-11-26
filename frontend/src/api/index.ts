@@ -2,7 +2,7 @@ import type { Role } from '../types';
 import { adaptSources, adaptStudentDashboard, adaptTeacherDashboard } from './adapters';
 import { request, setCsrfToken } from './client';
 import type {
-  AreaCode, ClassOut, DiagnosticAnswerOut, DiagnosticNext, DiagnosticResults, DiagnosticStatus, GradeBand,
+  AreaCode, ClassOut, DiagnosticAnswerOut, DiagnosticListenOut, DiagnosticNext, DiagnosticResults, DiagnosticStatus, GradeBand,
   ListOut, SessionOut, SourceOut, StudentDashboardOut, TeacherDashboardOut,
 } from './wire';
 export * from './types';
@@ -19,6 +19,9 @@ export const api = {
     method: 'POST', body: JSON.stringify({ classId, gradeBand }),
   }),
   getDiagnosticQuestion: () => request<DiagnosticNext>('/diagnostic/next-question'),
+  registerDiagnosticListen: (questionId: string, playId: string) => request<DiagnosticListenOut>('/diagnostic/listening-plays', {
+    method: 'POST', body: JSON.stringify({ questionId, playId }),
+  }),
   submitDiagnosticAnswer: (questionId: string, selectedOptionId: string | null) => request<DiagnosticAnswerOut>('/diagnostic/answers', {
     method: 'POST', body: JSON.stringify({ questionId, selectedOptionId }),
   }),

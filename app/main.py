@@ -40,7 +40,8 @@ class Health(BaseModel):
 
 MARIADB_WRITES = {
     "/api/v1/auth/login", "/api/v1/auth/logout",
-    "/api/v1/diagnostic/start", "/api/v1/diagnostic/answers", "/api/v1/ai-credentials",
+    "/api/v1/diagnostic/start", "/api/v1/diagnostic/answers", "/api/v1/diagnostic/listening-plays",
+    "/api/v1/ai-credentials",
 }
 
 MARIADB_CONTENT_WRITES = {

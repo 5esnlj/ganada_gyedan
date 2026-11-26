@@ -65,17 +65,18 @@ export type StudentEdition = MaterialOut & {
   originalContent?: string | null;
 };
 
-async function sourcePdf(fileId: string): Promise<Blob> {
-  const url = `${config.API_BASE_URL.replace(/\/$/, '')}/files/${encodeURIComponent(fileId)}/download`;
+const downloadUrl = (materialId: string) => `${config.API_BASE_URL.replace(/\/$/, '')}${materialPath(materialId)}/download`;
+
+async function fetchPdf(url: string): Promise<Blob> {
   let response: Response;
   try {
     response = await fetch(url, { credentials: 'include' });
   } catch {
-    throw new ApiError(0, 'NETWORK_ERROR', '원본 PDF 서버에 연결할 수 없습니다.');
+    throw new ApiError(0, 'NETWORK_ERROR', 'PDF 서버에 연결할 수 없습니다.');
   }
   if (!response.ok) {
     const payload = await response.json().catch(() => ({})) as { code?: string; message?: string; requestId?: string };
-    throw new ApiError(response.status, payload.code ?? 'HTTP_ERROR', payload.message ?? '원본 PDF를 불러오지 못했습니다.', payload.requestId);
+    throw new ApiError(response.status, payload.code ?? 'HTTP_ERROR', payload.message ?? 'PDF를 불러오지 못했습니다.', payload.requestId);
   }
   return response.blob();
 }
@@ -90,7 +91,8 @@ export const pdfMakerApi = {
     body.set('unit', unit);
     return request<PdfSourceOut>(`${classPath(classId)}/sources/pdf`, { method: 'POST', body });
   },
-  sourcePdf,
+  sourcePdf: (fileId: string) => fetchPdf(`${config.API_BASE_URL.replace(/\/$/, '')}/files/${encodeURIComponent(fileId)}/download`),
+  materialPdf: (materialId: string) => fetchPdf(downloadUrl(materialId)),
   students: (classId: string) => request<ListOut<StudentTarget>>(`${classPath(classId)}/students`),
   credentials: () => request<ListOut<Credential>>('/ai-credentials'),
   saveCredential: (apiKey: string) => request<Credential>('/ai-credentials', {
@@ -124,5 +126,5 @@ export const pdfMakerApi = {
       method: 'POST', headers: { 'If-Match': version }, body,
     });
   },
-  downloadUrl: (materialId: string) => `${config.API_BASE_URL.replace(/\/$/, '')}${materialPath(materialId)}/download`,
+  downloadUrl,
 };

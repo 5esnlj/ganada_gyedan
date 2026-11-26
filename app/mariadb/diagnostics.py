@@ -68,6 +68,7 @@ def load_diagnostics(cursor, store, user_id=None) -> None:
             "form": form, "originClassId": str(row["origin_class_id"]),
             "status": row["status"], "startedAt": row["started_at"],
             "completedAt": row["completed_at"], "answers": {}, "results": None,
+            "listeningPlays": json.loads(row["listening_plays"] or "{}") if "listening_plays" in row else None,
         }
     for row in fetch("""SELECT a.student_id, q.source_code, a.selected_option_id
                          FROM diagnostic_answers a JOIN diagnostic_questions q ON q.id = a.question_id""", "a.student_id"):
@@ -76,11 +77,11 @@ def load_diagnostics(cursor, store, user_id=None) -> None:
     parts, areas = defaultdict(list), defaultdict(list)
     for row in fetch("SELECT * FROM diagnostic_part_results"):
         parts[str(row["student_id"])].append(PartResult(
-            area=row["area"], skill=row["skill"], score=row["score"], level=row["level_code"],
+            area=row["area"], skill=row["skill"], score=row["score"], maxScore=100, level=row["level_code"],
         ))
     for row in fetch("SELECT * FROM diagnostic_area_results"):
         areas[str(row["student_id"])].append(AreaResult(
-            area=row["area"], score=row["score"], level=row["level_code"],
+            area=row["area"], score=row["score"], maxScore=200, level=row["level_code"],
         ))
     for key, record in records.items():
         if record["status"] == "completed":
@@ -107,6 +108,7 @@ def edit_diagnostic(store, user_id):
         load_diagnostics(cursor, store, user_id)
         before = store.diagnostics.get(user_id)
         old_answers = set(before["answers"]) if before else set()
+        old_plays = before["listeningPlays"] if before else None
         was_complete = before is not None and before["status"] == "completed"
         yield
         record = store.diagnostics[user_id]
@@ -116,6 +118,12 @@ def edit_diagnostic(store, user_id):
                 """INSERT INTO student_diagnostics (student_id, form_id, origin_class_id)
                    VALUES (%s, %s, %s)""",
                 (user_id, form_id, record["originClassId"]),
+            )
+        plays = record["listeningPlays"]
+        if plays and plays != old_plays:
+            cursor.execute(
+                "UPDATE student_diagnostics SET listening_plays = %s WHERE student_id = %s",
+                (json.dumps(plays), user_id),
             )
         for question_id in record["answers"].keys() - old_answers:
             cursor.execute(

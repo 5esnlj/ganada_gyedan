@@ -1,11 +1,13 @@
 import { useState } from 'react';
-import { Download } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Download } from 'lucide-react';
 import { SUBJECT_LABELS } from '../api';
 import { dateLabel } from '../api/adapters';
-import { pdfMakerApi } from '../api/pdfMaker';
+import { pdfMakerApi, type MaterialContent } from '../api/pdfMaker';
 import type { AreaCode } from '../api/wire';
 import { Button, FolderCard, PageHeader } from '../components';
 import { useApi } from '../hooks';
+import type { PdfSource } from '../pdf';
+import { usePdfDocument } from '../pdf/usePdfDocument';
 import styles from './StudentMaterialsPage.module.css';
 
 function LoadError({ message, retry }: { message: string; retry: () => void }) {
@@ -40,6 +42,43 @@ export function StudentMaterialView({ id, onBack }: { id: string; onBack: () => 
   if (error) return <>{back}<LoadError message={error.message} retry={retry} /></>;
   if (!data) return <>{back}<p role="status">자료를 불러오는 중…</p></>;
   const { content, ...material } = data.data;
+  return <>
+    <PageHeader title={material.title} actions={back} />
+    <div className={styles.meta}>
+      <span>{[SUBJECT_LABELS[material.subject], material.unit, dateLabel(material.publishedAt)].filter(Boolean).join(' · ')}</span>
+      {material.hasPdf && <a className={styles.download} href={pdfMakerApi.downloadUrl(id)}>
+        <Download size={18} aria-hidden="true" /> PDF 내려받기
+      </a>}
+    </div>
+    {material.hasPdf ? <PublishedPdf key={id} id={id} title={material.title} /> : <MaterialText content={content} />}
+  </>;
+}
+
+function PublishedPdf({ id, title }: { id: string; title: string }) {
+  const { pdf, error, retry } = usePdfDocument(id, pdfMakerApi.materialPdf);
+  if (error) return <LoadError message={error} retry={retry} />;
+  if (!pdf) return <p role="status">PDF를 불러오는 중…</p>;
+  return <PdfPages pdf={pdf} title={title} />;
+}
+
+function PdfPages({ pdf, title }: { pdf: PdfSource; title: string }) {
+  const [number, setNumber] = useState(1);
+  const { data: page, error, retry } = useApi(() => pdf.previewPage(number), [pdf, number]);
+  return <section className={styles.pdfReader} aria-label="배포된 전환 PDF">
+    {pdf.pageCount > 1 && <div className={styles.pdfPager}>
+      <Button variant="secondary" aria-label="이전 쪽" icon={<ChevronLeft size={18} aria-hidden="true" />}
+        disabled={number === 1} onClick={() => setNumber(number - 1)} />
+      <span aria-live="polite">{number} / {pdf.pageCount}쪽</span>
+      <Button variant="secondary" aria-label="다음 쪽" icon={<ChevronRight size={18} aria-hidden="true" />}
+        disabled={number === pdf.pageCount} onClick={() => setNumber(number + 1)} />
+    </div>}
+    {error ? <LoadError message="PDF 페이지를 표시하지 못했습니다." retry={retry} />
+      : page?.number === number ? <img className={styles.pdfPage} src={page.imageUrl} alt={`${title} ${number}쪽`} />
+      : <p role="status">{number}쪽을 표시하는 중…</p>}
+  </section>;
+}
+
+function MaterialText({ content }: { content: MaterialContent }) {
   const notes = new Map(content.studyNotes?.map((note) => [note.blockId, note]));
   const hidden = new Set(content.hiddenBlockIds);
   const grouped = new Map<number | null, typeof content.paragraphs>();
@@ -51,13 +90,6 @@ export function StudentMaterialView({ id, onBack }: { id: string; onBack: () => 
     grouped.set(page, group);
   }
   return <>
-    <PageHeader title={material.title} actions={back} />
-    <div className={styles.meta}>
-      <span>{[SUBJECT_LABELS[material.subject], material.unit, dateLabel(material.publishedAt)].filter(Boolean).join(' · ')}</span>
-      {material.hasPdf && <a className={styles.download} href={pdfMakerApi.downloadUrl(id)}>
-        <Download size={18} aria-hidden="true" /> PDF 내려받기
-      </a>}
-    </div>
     {[...grouped].map(([page, paragraphs]) => <section key={page ?? 'body'} className={styles.reader}>
       <h2>{page ? `${page}쪽` : '본문'}</h2>
       {paragraphs.map((paragraph) => {

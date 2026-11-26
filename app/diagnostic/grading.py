@@ -6,6 +6,7 @@ from app.core.dto import Area, Level
 
 from .dto import (
     AreaResult,
+    AssessmentAreaPartResult,
     AssessmentCommunicationResult,
     AssessmentOverallResult,
     AssessmentSkillResult,
@@ -135,14 +136,19 @@ def _grade_assessment(
     parts: list[PartResult] = []
     areas: list[AreaResult] = []
     subjects: list[AssessmentSubjectResult] = []
+    area_parts: list[AssessmentAreaPartResult] = []
     area_scores = {area: _score(by_area[area], correct_ids) for area in AREAS}
     for area in AREAS:
         items = by_area[area]
         for skill in SKILLS:
             part_items = [item for item in items if item.display.skill == skill]
-            _, _, percent = _score(part_items, correct_ids)
+            earned, maximum, percent = _score(part_items, correct_ids)
+            level = _score_level(percent)
+            area_parts.append(AssessmentAreaPartResult(
+                area=area, skill=skill, score=float(earned), maxScore=float(maximum), percent=float(percent), level=level,
+            ))
             parts.append(PartResult(
-                area=area, skill=skill, score=float(percent), maxScore=100, level=_score_level(percent),
+                area=area, skill=skill, score=float(percent), maxScore=100, level=level,
             ))
 
         earned, maximum, percent = area_scores[area]
@@ -173,7 +179,7 @@ def _grade_assessment(
     )
     summary = AssessmentSummary(
         gradeBand=form.grade_band, listening=skills["listening"], reading=skills["reading"],
-        overall=overall, subjects=subjects, communication=communication,
+        overall=overall, subjects=subjects, communication=communication, areaParts=area_parts,
     )
     return DiagnosticResults(
         formId=form.id, isSynthetic=form.is_synthetic, parts=parts, areas=areas, assessmentSummary=summary,

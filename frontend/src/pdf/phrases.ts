@@ -1,9 +1,35 @@
 import type { MaterialParagraph, PhraseChange } from '../api/wire';
+import type { PdfBlock } from './types';
 
 export interface PhrasePlacement {
   // Canvas line slices use JavaScript string offsets (UTF-16).
   start: number;
   end: number;
+}
+
+export function withoutLegacyBadge(
+  block: Pick<PdfBlock, 'structuralPrefix' | 'text'>, text: string, phrases: readonly PhraseChange[],
+) {
+  const prefix = block.structuralPrefix;
+  const startsWithBadge = (value: string) => prefix !== undefined && value.trimStart().startsWith(prefix) &&
+    /^[\s‸]/u.test(value.trimStart().slice(prefix.length));
+  if (!prefix || !startsWithBadge(text)) return { text, phrases };
+  const body = text.trimStart().slice(prefix.length).trimStart();
+  // Keep a body that already starts with the same number as its badge.
+  if (startsWithBadge(block.text) && !startsWithBadge(body)) return { text, phrases };
+  const badge = Array.from(text.slice(0, text.length - body.length));
+  return {
+    text: body,
+    phrases: phrases.flatMap(change => {
+      if (change.start >= badge.length) return [{ ...change, start: change.start - badge.length }];
+      // An older saved edit can include the badge at the start of both sentences.
+      const expected = badge.slice(change.start).join('');
+      const { original, replacement } = change;
+      if (!original.startsWith(expected) || !replacement.startsWith(expected) ||
+          original.length <= expected.length || replacement.length <= expected.length) return [];
+      return [{ start: 0, original: original.slice(expected.length), replacement: replacement.slice(expected.length) }];
+    }),
+  };
 }
 
 export function placePhrases(text: string, changes: readonly PhraseChange[], deferred: ReadonlySet<PhraseChange>) {

@@ -1,3 +1,5 @@
+/// <reference lib="es2022.intl" />
+
 import type { Box, Rgb, TextRect } from './types';
 
 export interface Raster {
@@ -128,20 +130,47 @@ export function inkColor(source: Raster, masked: Raster, scale: number, rectangl
   ];
 }
 
-export function wrapLine(context: CanvasRenderingContext2D, text: string, width: number): [string, string] {
+const graphemes = typeof Intl.Segmenter === 'function' ? new Intl.Segmenter(undefined, { granularity: 'grapheme' }) : null;
+const koreanSyllable = /[\p{Script=Hangul}\p{Script=Han}]/u;
+const openPunctuation = /[\p{Ps}\p{Pi}]$/u;
+const closePunctuation = /^[\p{Pe}\p{Pf}.,!?:;…、。%％]/u;
+
+export function wrapLine(
+  context: Pick<CanvasRenderingContext2D, 'measureText'>, text: string, width: number, compactKorean = false,
+): [string, string] {
   if (width <= 0) return ['', text];
   if (context.measureText(text).width <= width) return [text, ''];
-  const chars = Array.from(text);
+  const chars = graphemes ? Array.from(graphemes.segment(text), item => item.segment) : Array.from(text);
+  const offsets = [0];
+  for (const char of chars) offsets.push(offsets[offsets.length - 1] + char.length);
   let low = 0;
   let high = chars.length;
   while (low < high) {
     const middle = Math.ceil((low + high) / 2);
-    if (context.measureText(chars.slice(0, middle).join('')).width <= width) low = middle;
+    if (context.measureText(text.slice(0, offsets[middle])).width <= width) low = middle;
     else high = middle - 1;
   }
   if (!low) return ['', text];
-  const prefix = chars.slice(0, low).join('');
-  const separator = prefix.lastIndexOf(' ');
-  const count = separator > 0 ? Array.from(prefix.slice(0, separator)).length : low;
-  return [chars.slice(0, count).join('').trimEnd(), chars.slice(count).join('').trimStart()];
+
+  let syllableBreak = 0;
+  let fallback = 0;
+  for (let count = low; count > 0; count--) {
+    const previous = chars[count - 1];
+    const next = chars[count] ?? '';
+    const split = offsets[count];
+    if (/\s/u.test(previous) || /\s/u.test(next)) {
+      const line = text.slice(0, split).trimEnd();
+      const rest = text.slice(split).trimStart();
+      if (!line || openPunctuation.test(line) || closePunctuation.test(rest)) continue;
+      // Keep word breaks when they fill the line. Tighter settings can use Korean syllable breaks.
+      if (!syllableBreak || context.measureText(line).width >= width * 0.9) return [line, rest];
+      return [text.slice(0, syllableBreak), text.slice(syllableBreak)];
+    }
+    if (openPunctuation.test(previous) || closePunctuation.test(next)) continue;
+    fallback ||= split;
+    if (compactKorean && koreanSyllable.test(previous) && koreanSyllable.test(next)) syllableBreak ||= split;
+  }
+
+  const split = syllableBreak || fallback || offsets[low];
+  return [text.slice(0, split).trimEnd(), text.slice(split).trimStart()];
 }

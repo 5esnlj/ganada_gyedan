@@ -2,7 +2,7 @@ import type { PhraseChange } from '../api/wire';
 import { renderHelpPages } from './appendix';
 import { loadPreviewFont, previewFont } from './fonts';
 import { drawPageGlosses, nativeGlosses, type GlossLine } from './glosses';
-import { fitPhraseSubset, placePhrases, type PhrasePlacement } from './phrases';
+import { fitPhraseSubset, placePhrases, withoutLegacyBadge, type PhrasePlacement } from './phrases';
 import { imageRaster, pixelRectangle, releaseRaster, textRectangle, wrapLine } from './raster';
 import type { Raster, Rectangle } from './raster';
 import type { Box, ConvertedPdfContent, PdfBlock, PdfHelpContent, PdfPage, PdfPreview, PdfProtectedRegion } from './types';
@@ -13,32 +13,44 @@ interface Overlay {
   lines: { x: number; baseline: number; text: string; start: number }[];
 }
 
+interface ReflowSpace {
+  bottom: number;
+  widthAt: (x: number, baseline: number, size: number, width: number) => number;
+}
+
 function chooseFont(block: PdfBlock, size: number): string {
   const specialty = { sans: '', serif: 'serif, ', hand: 'cursive, ', round: '' }[block.family];
   return `${block.weight || 400} ${size}px ${specialty}"${previewFont}", sans-serif`;
 }
 
-// Try the prototype's font/line-spacing reductions before keeping the original block.
 function fitText(
   context: CanvasRenderingContext2D, page: PdfPage, block: PdfBlock, text: string,
-  allows: (overlay: Overlay) => boolean,
+  reflow: ReflowSpace, allows: (overlay: Overlay) => boolean,
 ): Overlay | null {
   const top = block.y - (block.lineHeight - 1) * block.fontSize / 2;
   const bottom = Math.min(block.container?.y1 ?? page.height,
     top + block.lineCount * block.lineHeight * block.fontSize + block.room);
   const availableWidth = (block.container?.x1 ?? page.width) - block.x;
   const originalWidth = block.lineCount === 1 ? block.width * 1.03 + block.fontSize * 0.5 : block.width + 0.5;
-  const steps = [[1, 1, 0], [1, 1, 1], [0.95, 1, 0], [0.95, 1, 1], [0.9, 1, 0], [0.9, 1, 1]];
-  if (!block.inner) steps.push([0.9, 0.95, 1], [0.9, 0.9, 1], [0.85, 0.93, 1]);
-  for (const [fontScale, lineScale, extraWidth] of steps) {
-    if (lineScale < 1 && block.lineHeight * lineScale < 1.2 * fontScale) continue;
+  // Give long text an extra safe row at its original size before reducing the type.
+  const steps = [
+    { fontScale: 1, extra: 0, flow: false }, { fontScale: 1, extra: 1.4, flow: false },
+    { fontScale: 1, extra: 1.4, flow: true }, { fontScale: 1, extra: 1.4, flow: true, down: 0.2 },
+    { fontScale: 0.95, extra: 1.4, flow: false }, { fontScale: 0.95, extra: 1.4, flow: true },
+    { fontScale: 0.9, extra: 1.4, flow: false }, { fontScale: 0.9, extra: 1.4, flow: true },
+  ];
+  if (!block.inner && block.fontSize * 0.85 >= 8) {
+    steps.push({ fontScale: 0.85, extra: 1.4, flow: true });
+  }
+  for (const { fontScale, extra, flow, down = 0 } of steps) {
     const size = block.fontSize * fontScale;
-    if (fontScale < 0.9 && size < 8) continue;
-    // Extra width is still checked against the cell and nearby text or graphics.
-    const fullWidth = Math.min(availableWidth, originalWidth + extraWidth * block.fontSize * 1.4);
-    const pitch = block.lineHeight * block.fontSize * lineScale;
+    const fullWidth = Math.min(availableWidth, originalWidth + extra * block.fontSize);
+    const originalPitch = block.lineHeight * block.fontSize;
+    const pitch = flow && fontScale < 1 && !block.inner
+      ? Math.min(originalPitch, Math.max(1.25 * size, originalPitch * fontScale)) : originalPitch;
+    const limit = flow ? reflow.bottom : bottom + 1.5;
     const font = chooseFont(block, size);
-    const firstBaseline = block.y + block.fontSize * 0.88;
+    const firstBaseline = block.y + block.fontSize * (0.88 + down);
     context.font = font;
     const lines: Overlay['lines'] = [];
     let fits = true;
@@ -48,13 +60,15 @@ function fitText(
       let start = offset + paragraph.length - paragraph.trimStart().length;
       do {
         const baseline = firstBaseline + lines.length * pitch;
-        if (baseline + size * 0.22 > bottom + 1.5) { fits = false; break; }
+        if (baseline + size * 0.22 > limit) { fits = false; break; }
         const indent = !lines.length ? block.indent : 0;
+        const x = block.x + indent;
         const width = block.wrap && baseline > block.wrap.y && baseline - size < block.wrap.y1
           ? Math.min(fullWidth, block.wrap.x - block.x) : fullWidth;
-        const [line, rest] = wrapLine(context, remaining, width - indent);
+        const lineWidth = flow ? reflow.widthAt(x, baseline, size, width - indent) : width - indent;
+        const [line, rest] = wrapLine(context, remaining, lineWidth, flow);
         if (!line && remaining) { fits = false; break; }
-        lines.push({ x: block.x + indent, baseline, text: line, start });
+        lines.push({ x, baseline, text: line, start });
         start += remaining.length - rest.length;
         remaining = rest;
       } while (remaining);
@@ -69,7 +83,7 @@ function fitText(
 
 function fitParagraph(
   context: CanvasRenderingContext2D, page: PdfPage, block: PdfBlock, text: string, changes: readonly PhraseChange[],
-  allows: (overlay: Overlay, placements: readonly PhrasePlacement[]) => boolean,
+  reflow: ReflowSpace, allows: (overlay: Overlay, placements: readonly PhrasePlacement[]) => boolean,
 ) {
   context.font = chooseFont(block, block.fontSize);
   const widestFirst = changes.map(change => ({
@@ -78,7 +92,7 @@ function fitParagraph(
   })).sort((a, b) => b.growth - a.growth).map(({ change }) => change);
   const fitted = fitPhraseSubset(widestFirst, deferred => {
     const plan = placePhrases(text, changes, deferred);
-    const overlay = fitText(context, page, block, plan.text, candidate => allows(candidate, plan.placements));
+    const overlay = fitText(context, page, block, plan.text, reflow, candidate => allows(candidate, plan.placements));
     return overlay ? { overlay, placements: plan.placements } : null;
   });
   return fitted ? { ...fitted.value, deferred: fitted.deferred } : null;
@@ -165,10 +179,58 @@ function overlayBounds(context: CanvasRenderingContext2D, overlay: Overlay, plac
   });
 }
 
+function reflowSpace(page: PdfPage, block: PdfBlock, barriers: readonly Rectangle[], sourceBottom: number): ReflowSpace {
+  const { scale } = page;
+  const x0 = block.x * scale;
+  const x1 = (block.x + block.width) * scale;
+  const pitch = block.lineHeight * block.fontSize;
+  let bottom = Math.min(block.container?.y1 ?? page.height - block.fontSize / 2, sourceBottom + 2 * pitch);
+  for (const obstacle of barriers) {
+    const top = obstacle.y0 / scale;
+    if (top >= sourceBottom && obstacle.x1 >= x0 && obstacle.x0 <= x1) {
+      bottom = Math.min(bottom, top - 2 / scale);
+    }
+  }
+  return {
+    bottom,
+    widthAt(x, baseline, size, width) {
+      let right = (x + width) * scale;
+      const left = x * scale;
+      const top = (baseline - size * 0.86) * scale - 1;
+      const bottom = (baseline + size * 0.18) * scale + 1;
+      for (const obstacle of barriers) {
+        if (obstacle.x1 < left - 1 || obstacle.y1 < top || obstacle.y0 > bottom) continue;
+        right = Math.min(right, obstacle.x0 - 2);
+      }
+      return (right - left) / scale;
+    },
+  };
+}
+
+// Rows added below the source can only use undisturbed, evenly colored space.
+function blankExtension(
+  bounds: Rectangle, firstNewRow: number, pixels: Uint8ClampedArray, background: Uint8ClampedArray, width: number,
+) {
+  const y0 = Math.max(firstNewRow, bounds.y0);
+  const reference = (y0 * width + bounds.x0) * 4;
+  for (let y = y0; y <= bounds.y1; y++) {
+    for (let x = bounds.x0; x <= bounds.x1; x++) {
+      const i = (y * width + x) * 4;
+      if (pixels[i + 3] !== 255 || background[i + 3] !== 255) return false;
+      for (let channel = 0; channel < 3; channel++) {
+        if (pixels[i + channel] !== background[i + channel] ||
+            Math.abs(background[i + channel] - background[reference + channel]) > 10) return false;
+      }
+    }
+  }
+  return true;
+}
+
 function overlayFits(
   page: PdfPage, raster: Raster, block: PdfBlock, obstacles: Rectangle[],
   overlay: Overlay, placements: readonly PhrasePlacement[],
-  blankImageMargins: readonly Rectangle[], backgroundPixels: Uint8ClampedArray,
+  blankImageMargins: readonly Rectangle[], pixels: Uint8ClampedArray, backgroundPixels: Uint8ClampedArray,
+  firstNewRow: number,
 ) {
   const { width, height } = raster.canvas;
   const region: Box = block.container ?? { x: 0, y: 0, x1: page.width, y1: page.height };
@@ -178,7 +240,8 @@ function overlayFits(
         box.x1 + slack > region.x1 || box.y1 + slack > region.y1) return false;
     const bounds = pixelRectangle(box, page.scale, width, height, 1);
     return bounds && !obstacles.some(other => overlaps(bounds, other)) &&
-      blankImageMargins.every(image => imageOverlapIsWhite(bounds, image, backgroundPixels, width));
+      blankImageMargins.every(image => imageOverlapIsWhite(bounds, image, backgroundPixels, width)) &&
+      blankExtension(bounds, firstNewRow, pixels, backgroundPixels, width);
   });
 }
 
@@ -229,10 +292,18 @@ function studentRunPatches(
   drawn: readonly Rectangle[], pixels: Uint8ClampedArray, backgroundPixels: Uint8ClampedArray,
   blankImageMargins: readonly Rectangle[],
 ) {
-  // Retry a clipped glyph with more room. Empty padding may touch an obstacle; its ink cannot.
-  for (const margin of [0.15, 0.22, 0.30]) {
-    const runs = runBounds(page, raster, block, margin);
-    const width = raster.canvas.width;
+  const { width, height } = raster.canvas;
+  // A separate mark above a run may touch its padding. Retry with a tighter
+  // top edge and still reject any ink at that edge or inside the obstacle.
+  for (const [margin, cropTop] of [[0.15, false], [0.22, false], [0.3, false], [0.15, true], [0.22, true]] as const) {
+    const runs = block.runs.map(run => {
+      const bounds = textRectangle(run, page.scale, width, height, margin);
+      if (!bounds || !cropTop) return bounds;
+      const maximum = (run[1] + run[3] * 0.18) * page.scale;
+      const y0 = barriers.reduce((top, other) => overlaps(bounds, other) && other.y1 < maximum
+        ? Math.max(top, other.y1 - 1) : top, bounds.y0);
+      return { ...bounds, y0 };
+    });
     const images = blankImageMargins.filter(image => runs.some(run => run && !imageOverlapIsWhite(run, image, backgroundPixels, width)));
     const patches = safeRunPatches(runs, barriers.concat(images), pixels, backgroundPixels, width, true);
     if (patches && !patches.some(patch => drawn.some(overlay => overlaps(patch, overlay)))) return patches;
@@ -264,19 +335,6 @@ export function canEditPdfBlock(
 ): boolean {
   return !page.fallback && !block.preserve && (block.layout === undefined || block.layout === 'text') && /\p{L}/u.test(block.text) && !content.omittedPages?.includes(page.number)
     && !content.hiddenBlockIds?.includes(block.id);
-}
-
-function withoutLegacyBadge(block: PdfBlock, text: string, phrases: readonly PhraseChange[]) {
-  const prefix = block.structuralPrefix;
-  const trimmed = text.trimStart();
-  const tail = prefix && trimmed.startsWith(prefix) ? trimmed.slice(prefix.length) : '';
-  if (!/^\s/u.test(tail)) return { text, phrases };
-  const body = tail.trimStart();
-  const size = Array.from(text.slice(0, text.length - body.length)).length;
-  return {
-    text: body,
-    phrases: phrases.filter(change => change.start >= size).map(change => ({ ...change, start: change.start - size })),
-  };
 }
 
 export async function renderConvertedPages(pages: readonly PdfPage[], content: ConvertedPdfContent): Promise<PdfPreview> {
@@ -359,9 +417,11 @@ export async function renderConvertedPages(pages: readonly PdfPage[], content: C
             obstacles.text.filter(other => other.owner !== block.id).map(other => other.bounds), drawn);
           const patches = studentRunPatches(page, raster, block, barriers, drawn, pixels, backgroundPixels, blankImageMargins);
           if (patches) {
-            fitted = fitParagraph(raster.context, page, block, text, phrases,
+            const sourceBottom = Math.max(...block.runs.map(([, y, , size]) => y + size * 1.08));
+            const reflow = reflowSpace(page, block, barriers, sourceBottom);
+            fitted = fitParagraph(raster.context, page, block, text, phrases, reflow,
               (overlay, placements) => overlayFits(page, currentRaster, block, barriers, overlay, placements,
-                blankImageMargins, backgroundPixels));
+                blankImageMargins, pixels, backgroundPixels, Math.ceil(sourceBottom * page.scale) + 1));
             if (fitted) {
               replaceRuns(raster.context, background, patches);
               for (const box of overlayBounds(raster.context, fitted.overlay, fitted.placements)) {

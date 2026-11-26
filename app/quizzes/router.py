@@ -192,7 +192,11 @@ def start_quiz_jobs(classId, body: QuizGenerate, request, state, background_task
         elif body.useStudentMaterials:
             input_id = _latest_published_material(state, body.sourceId, member_id)
         if input_id is None and not approved:
-            fail(422, "QUIZ_PASSAGE_REQUIRED", "배포된 전환본이 없는 학생이 있습니다. 원본에서 출제할 문장을 선택해 주세요.")
+            message = (
+                "배포된 전환본이 없는 학생이 있습니다. 자료 제작에서 먼저 전환본을 배포해 주세요."
+                if body.useStudentMaterials else "원본에서 출제할 문장을 선택해 주세요."
+            )
+            fail(422, "QUIZ_PASSAGE_REQUIRED", message)
         candidates.append({
             "classId": classId, "sourceId": body.sourceId, "studentMemberId": member_id,
             "inputMaterialId": input_id,

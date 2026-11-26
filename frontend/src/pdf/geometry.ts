@@ -378,18 +378,39 @@ function badgeFor(rect: TextRect, shapes: Shape[]): Shape | undefined {
 }
 
 function keepLeadingBadge(block: PdfBlock, shapes: Shape[]): Shape | undefined {
-  const prefix = /^(\S+)\s+/u.exec(block.text);
+  const leadingToken = /^([^\s‸]+)[\s‸]+/u;
+  const prefix = leadingToken.exec(block.text);
   const [first, ...body] = block.runs;
   if (!prefix || !marker.test(prefix[1]) || !first || !body.length || first[2] > first[3] * 1.3) return;
   const badge = badgeFor(first, shapes);
-  if (!badge || body[0][0] < badge.x1 - 1) return;
+  if (!badge) return;
+
+  // The PDF text layer may put a circled paragraph number on a separate line.
+  // Its neighboring prose can have a different baseline even on the same visual row.
+  const sourceLines = block.sourceLines;
+  const detached = sourceLines?.[0]?.text.trim() === prefix[1] &&
+    block.lines.length > 1 && body[0][1] - first[1] >= block.fontSize * 0.6;
+  if (!detached && body[0][0] < badge.x1 - 1) return;
 
   const left = Math.min(...body.map(run => run[0]));
   const right = Math.max(...body.map(run => run[0] + run[2]));
   const firstLine = body.filter(run => Math.abs(run[1] - body[0][1]) < block.fontSize * 0.45);
   const firstLeft = Math.min(...firstLine.map(run => run[0]));
   const firstRight = Math.max(...firstLine.map(run => run[0] + run[2]));
-  block.lines[0] = [firstLeft, body[0][1], firstRight - firstLeft, block.lines[0][3]];
+  if (detached) {
+    block.lines = block.lines.slice(1);
+    block.sourceLines = sourceLines?.slice(1);
+    block.y = block.lines[0][1];
+    block.lineCount = block.lines.length;
+    const pitch = block.lineCount > 1
+      ? (block.lines[block.lineCount - 1][1] - block.y) / (block.lineCount - 1)
+      : block.fontSize * 1.45;
+    block.lineHeight = Math.min(2.4, Math.max(1.1, pitch / block.fontSize));
+    block.height = ((block.lineCount - 1) * block.lineHeight + 1) * block.fontSize;
+  } else {
+    block.lines[0] = [firstLeft, body[0][1], firstRight - firstLeft, block.lines[0][3]];
+    if (sourceLines?.[0]) sourceLines[0] = { text: sourceLines[0].text.replace(leadingToken, ''), rect: block.lines[0] };
+  }
   block.structuralRuns = [first];
   block.structuralPrefix = prefix[1];
   block.text = block.text.slice(prefix[0].length);

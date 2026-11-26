@@ -335,7 +335,8 @@ def test_pdf_recovers_missing_classification_without_revealing_known_teacher_con
         if "context" in data:
             assert [block["id"] for block in data["blocks"]] == ["p2b2"]
             return {"blocks": [{"id": "p2b2", "audience": "teacher", "evidence": "지도 메모"}]}
-        assert "분류" in instructions and "learner" not in data
+        assert "분류" in instructions and data["stage"] == "classification-retry"
+        assert data["learner"]["subjectCriterion"]["grade"] == "중급"
         return {"blocks": [{"id": block["id"], "role": "body", "audience": "student"} for block in data["blocks"]]}
 
     result = convert_pdf(analyze, {"subject": "korean", "unit": "한글"},
@@ -358,7 +359,7 @@ def test_four_page_pdf_recovers_only_failed_pages_and_keeps_valid_support(monkey
         payload = json.loads(request.content)
         data = json.loads(payload["messages"][1]["content"])
         page = data["page"]
-        phase = "confirm" if "context" in data else data.get("stage", "primary" if "learner" in data else "fallback")
+        phase = "confirm" if "context" in data else data.get("stage", "primary")
         calls.append((page, phase))
         rows = [
             {"id": block["id"], "role": "body", "audience": "student"}
@@ -373,7 +374,7 @@ def test_four_page_pdf_recovers_only_failed_pages_and_keeps_valid_support(monkey
                 rows[0].update(audience="teacher", evidence="지도 메모")
             elif phase == "adaptation":
                 assert [row["id"] for row in rows] == [f"p{page}b1"]
-                if page == 2:
+                if page in (1, 2):
                     rows[0]["rewrites"] = [{"from": "검토해 주세요", "to": "확인해 주세요"}]
                 elif page == 3:
                     terms = {"단위": {"easy": "재는 데 쓰는 기준", "translation": "đơn vị"}}
@@ -381,6 +382,7 @@ def test_four_page_pdf_recovers_only_failed_pages_and_keeps_valid_support(monkey
                     rows[0]["visual"] = {"kind": "seq", "title": "비교 순서", "items": ["비교", "정리"]}
             elif page == 1:
                 rows[1]["audience"] = "teacher"
+                rows[0]["rewriteTargets"] = [{"from": "검토해 주세요", "basis": "communication"}]
             elif page == 2 and phase == "primary":
                 rows[0]["rewriteTargets"] = [{"from": "검토해 주세요", "basis": "communication"}]
                 rows[1]["audience"] = "teacher"
@@ -444,14 +446,15 @@ def test_four_page_pdf_recovers_only_failed_pages_and_keeps_valid_support(monkey
         assert replay.raise_for_status().json()["items"][0]["id"] == job_id
 
     assert calls == [
-        (1, "primary"), (1, "fallback"), (2, "primary"), (2, "fallback"), (2, "confirm"), (2, "adaptation"),
+        (1, "primary"), (1, "classification-retry"), (1, "adaptation"),
+        (2, "primary"), (2, "classification-retry"), (2, "confirm"), (2, "adaptation"),
         (3, "primary"), (3, "adaptation"), (4, "primary"), (4, "adaptation"),
     ]
     assert content["limitedSupportPages"] == [1, 2]
     assert content["omittedPages"] == []
     assert content["hiddenBlockIds"] == ["p1b2", "p2b2"]
     assert [(row["id"], row["page"], row["text"]) for row in content["paragraphs"]] == [
-        ("p1b1", 1, "자료를 검토해 주세요."),
+        ("p1b1", 1, "자료를 확인해 주세요."),
         ("p2b1", 2, "각 값을 확인해 주세요."),
         ("p2b3", 2, "자료를 읽으세요."),
         ("p3b1", 3, "이 자료의 단위를 확인합니다."),
@@ -564,7 +567,7 @@ def test_pdf_key_and_internal_id_conflict_only_reuses_unambiguous_rows():
                 },
             }
         assert "분류" in instructions
-        assert set(request) == {"page", "subject", "unit", "blocks"}
+        assert request["stage"] == "classification-retry"
         return {"blocks": [
             {"id": block["id"], "role": "body", "audience": "student"} for block in request["blocks"]
         ]}
@@ -606,9 +609,49 @@ def test_pdf_tracks_only_contextual_phrase_changes_and_preserves_quoted_text():
         assert paragraph.text[change.start:change.start + len(change.replacement)] == change.replacement
 
 
+def test_pdf_rewrites_extraction_spaces_and_selected_occurrence_without_changing_literals():
+    original = "한 변이 12 cm인 정사각형의 둘레를 산 출해 보세요. 근거를 검토합니다. 결론을 검토합니다."
+    primary = "한 변이 12 cm인 정사각형의 둘레를 산출해 보세요"
+    shortened = "한 변이 12 cm인 정사각형의 둘레를 구해 보세요"
+    formula = "x + 2 = 3일 때 값을 산출하세요"
+    page = PdfPage(number=1, blocks=[
+        PdfBlock(id="p1b1", text=original),
+        PdfBlock(id="p1b2", text=formula),
+    ])
+
+    def analyze(_instructions, request):
+        if request.get("stage") == "adaptation":
+            assert request["blocks"][0]["rewriteTargets"][0]["from"] == primary.replace("산출", "산 출")
+            return {"blocks": [
+                {"id": "p1b1", "rewrites": [
+                    {"from": primary, "to": shortened},
+                    {"from": "검토합니다", "to": "살펴봅니다"},
+                ]},
+                {"id": "p1b2", "rewrites": [{"from": formula, "to": "x − 2 = 3일 때 값을 구하세요"}]},
+            ], "terms": {"둘레": {"easy": "도형의 가장자리 길이", "translation": "chu vi"}}}
+        return {"blocks": [
+            {"id": "p1b1", "role": "body", "audience": "student", "terms": ["둘레"], "rewriteTargets": [
+                {"from": primary, "basis": "subject"},
+                {"from": "검토합니다", "basis": "subject", "occurrence": 2},
+            ]},
+            {"id": "p1b2", "role": "body", "audience": "student", "rewriteTargets": [
+                {"from": formula, "basis": "subject"},
+            ]},
+        ]}
+
+    result = convert_pdf(analyze, {"subject": "math", "unit": "도형"},
+                         diagnosis("math", "intermediate"), "vi", [page])
+    first, second = result.paragraphs
+    assert first.text == shortened + ". 근거를 검토합니다. 결론을 살펴봅니다."
+    assert len(first.phraseChanges) == 2
+    assert second.text == formula and not second.phraseChanges
+    assert result.limitedSupportPages == [1]
+    assert result.translations[0]["translation"] == "chu vi"
+
+
 @pytest.mark.parametrize(("level", "grade", "daily", "uses_subject_rewrite", "uses_subject_note"), [
     ("below_beginner", "초급 미달", "intermediate", True, True),
-    ("intermediate", "중급", "intermediate", False, True),
+    ("intermediate", "중급", "intermediate", True, True),
     ("advanced", "고급", "beginner", False, False),
 ])
 def test_pdf_adapts_only_targets_allowed_by_subject_and_communication(
@@ -647,7 +690,7 @@ def test_pdf_adapts_only_targets_allowed_by_subject_and_communication(
             ], "terms": {"온도": "따뜻하거나 차가운 정도"}}
         return {"blocks": [
             {"id": "p1b1", "role": "body", "audience": "student", "terms": ["온도"], "readingHelp": "subject",
-             "rewriteTargets": [{"from": subject_target, "basis": "subject"}, {"from": "12℃보다", "basis": "subject"}]},
+             "rewriteTargets": [{"from": subject_target, "basis": "subject"}, {"from": "2℃보다", "basis": "subject"}]},
             {"id": "p1b2", "role": "question", "audience": "student",
              "rewriteTargets": [{"from": task, "basis": "communication"}]},
             {"id": "p1b3", "role": "body", "audience": "student",

@@ -186,6 +186,7 @@ export function PdfComparison({ originals, content, canEdit, canDownload, title,
   const { data: preview, error: previewError, retry } = useApi(() => renderPage(original, content, firstPage), [original, content, firstPage]);
   const converted = preview?.pages.find((page) => page.number === original.number);
   const phrases = preview?.phrases ?? [];
+  const glosses = preview?.glosses ?? [];
   const appliedCount = phrases.filter((phrase) => phrase.applied).length;
   const paragraphById = new Map(content.paragraphs
     .filter((paragraph) => pageNumber(paragraph, firstPage) === original.number)
@@ -269,6 +270,16 @@ export function PdfComparison({ originals, content, canEdit, canDownload, title,
                 <span>{change.original} → <strong>{change.replacement}</strong></span>
                 <small>{applied ? '지면 반영' : 'PDF 도움말'}</small>
               </li>
+            ))}
+          </ul>
+        </details>
+      )}
+      {converted && glosses.length > 0 && (
+        <details key={`glosses-${original.number}`} className={styles.details}>
+          <summary>지면의 모국어 뜻풀이 {glosses.length}개</summary>
+          <ul className={styles.phraseList}>
+            {glosses.map(({ term, translation }) => (
+              <li key={term}><strong>{term}</strong><span dir="auto">{translation}</span></li>
             ))}
           </ul>
         </details>

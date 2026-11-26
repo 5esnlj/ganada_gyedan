@@ -351,6 +351,7 @@ export function toBlocks(items: TextRun[], images: Box[], shapes: Box[]): (PdfBl
       preserve: block.preserve || block.runs.some(run => run.onImage), figureOnly: block.figureOnly,
       runs: block.runs.map(runRect),
       lines: block.lines.map((line): TextRect => [line.x, line.y, line.x1 - line.x, line.size]),
+      sourceLines: block.lines.map(line => ({ text: line.text, rect: [line.x, line.y, line.x1 - line.x, line.size] as TextRect })),
       room: 0, inner: false,
     };
   }).filter(block => block.text);
